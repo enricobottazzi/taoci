@@ -98,8 +98,18 @@ gzcat np-l20-res-16k/explanation-scores/batch-0.jsonl.gz \
 
 Coverage is sparse: ~50k explanations across 16k features, but only ~1k carry scorer outputs (the rest were generated but not yet auto-scored). Each `scores[*]` entry records *which scorer model* (e.g. `claude-4-5-haiku`) ran *which scorer type* (e.g. `eleuther_fuzz`, `eleuther_detection`) and the resulting `value ∈ [0,1]`. Detailed per-example outputs live in `jsonDetails`.
 
+## 5. UMAP of W_dec
+
+```bash
+pip install umap-learn matplotlib
+python scripts/umap_vectors.py     # caches np-l20-res-16k/umap.npy, writes umap.png
+# tweak: --n-neighbors 30 --min-dist 0.0 --metric cosine --recompute
+```
+
+Cosine metric matches the (already unit-norm) row geometry. The embedding is cached; re-run with `--recompute` to refit.
+
 ## TODO
 
-- [ ] IMAP
+- [x] UMAP
 - [ ] Clustering (Hexbin techniques + colouring) via hexagons (viz techniques)
 
