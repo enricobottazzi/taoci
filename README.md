@@ -130,7 +130,13 @@ Tests are the activating contexts shown to the scorer (positive class). Distract
 ## 6. Web viewer (retro UMAP)
 
 ```bash
-python -m http.server -d web 8000             # open http://localhost:8000
+export OPENROUTER_API_KEY=...
+python scripts/serve.py --port 8000            # open http://localhost:8000
 ```
 
 `[ + ]` overlays a 3×3 grid; click a cell to zoom in. `[ − ]` pops one level. `Esc` cancels picking.
+
+On the PLAY page, type your own explanation and click `SCORE` — the server runs
+`rescore_explanation.py` for that feature with your description and returns the
+balanced accuracy. Plain `python -m http.server -d web 8000` still works for the
+map/viewer, but the `/score` endpoint requires `scripts/serve.py`.
