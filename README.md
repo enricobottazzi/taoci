@@ -19,30 +19,37 @@ requirements.txt
 
 ### 1. Provision
 
-- A Postgres instance → `DATABASE_URL` (e.g. `postgres://user:pass@host:5432/taoci`).
-- A random 32-byte secret for signing JWTs → `JWT_SECRET`.
-- OpenRouter account → `OPENROUTER_API_KEY`.
+- A Postgres instance (`DATABASE_URL`).
+- A random 32-byte secret for signing JWTs (`JWT_SECRET = $(openssl rand -hex 32)`).
+- An OpenRouter account (`OPENROUTER_API_KEY`).
 - A host that can run a Python container with ~500 MB of disk.
 
-### 2. Bootstrap (run once per release)
+### 2. Configure
+
+```bash
+cp .env.example .env
+# edit .env: DATABASE_URL, JWT_SECRET, OPENROUTER_API_KEY
+```
+
+`.env` is git-ignored. Both `server/app.py` and `server/bootstrap.py` load it via `python-dotenv`. In production (Render, Fly, etc.), set the same variables as platform env vars and skip the `.env` file.
+
+### 3. Bootstrap (run once per release)
 
 ```bash
 pip install -r requirements.txt
-export DATABASE_URL=... TAOCI_DATA_DIR=./np-l20-res-16k
 python -m server.bootstrap
 ```
 
-`bootstrap.py` is idempotent and does three things:
+Idempotent. Does three things:
 
-1. Applies `server/schema.sql` to the Postgres at `$DATABASE_URL` (creates `profiles`, `submissions`, `feature_best`).
-2. `aws s3 sync` the two BE folders from the Neuronpedia public bucket into `$TAOCI_DATA_DIR` (~330 MB).
+1. Applies `server/schema.sql` to `$DATABASE_URL` (creates `profiles`, `submissions`, `feature_best`).
+2. `aws s3 sync` the two BE folders from the Neuronpedia public bucket into `./np-l20-res-16k/` (~330 MB).
 3. Fetches `vectors.npy`, runs UMAP, writes `web/umap.bin` (`Float32Array(N, 2)`, ~130 KB).
 
-### 3. Run
+### 4. Run
 
 ```bash
-export DATABASE_URL=... JWT_SECRET=... OPENROUTER_API_KEY=...
 uvicorn server.app:app --host 0.0.0.0 --port "${PORT:-8000}"
 ```
 
-In production, step 2 runs in the container entrypoint against a persistent volume; step 3 is the main process.
+In production, step 3 runs in the container entrypoint against a persistent volume; step 4 is the main process.

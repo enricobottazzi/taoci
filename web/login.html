@@ -22,11 +22,38 @@
 </style>
 </head>
 <body>
-  <form autocomplete="off">
+  <form id="f" autocomplete="off">
     <p class="hint">new user? pick a fresh new username and password</p>
-    <label for="u">USERNAME</label><input id="u" />
-    <label for="p">PASSWORD</label><input id="p" type="password" />
-    <a class="btn" href="map.html">ENTER</a>
+    <label for="u">USERNAME</label><input id="u" required minlength="2" maxlength="32" pattern="[A-Za-z0-9_\-]+" />
+    <label for="p">PASSWORD</label><input id="p" type="password" required minlength="8" maxlength="256" />
+    <button class="btn" type="submit">ENTER</button>
+    <p id="err" class="hint" style="color:#f55;display:none"></p>
   </form>
+<script>
+  const f = document.getElementById("f");
+  const err = document.getElementById("err");
+  f.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    err.style.display = "none";
+    const btn = f.querySelector("button");
+    btn.disabled = true;
+    try {
+      const r = await fetch("/auth", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ username: u.value, password: p.value }),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.detail || j.message || `HTTP ${r.status}`);
+      localStorage.setItem("taoci.token", j.access_token);
+      localStorage.setItem("taoci.user", JSON.stringify(j.user));
+      location.href = "map.html";
+    } catch (ex) {
+      err.textContent = String(ex.message || ex);
+      err.style.display = "block";
+      btn.disabled = false;
+    }
+  });
+</script>
 </body>
 </html>

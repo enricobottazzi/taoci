@@ -1,6 +1,8 @@
 """One-shot deploy prep: schema + dataset sync + umap.bin. Idempotent.
 
-    DATABASE_URL=... TAOCI_DATA_DIR=./np-l20-res-16k python -m server.bootstrap
+Reads `DATABASE_URL` from .env (or environment).
+
+    python -m server.bootstrap
 """
 import os
 from pathlib import Path
@@ -10,10 +12,13 @@ import numpy as np
 import psycopg
 from botocore import UNSIGNED
 from botocore.config import Config
+from dotenv import load_dotenv
 from huggingface_hub import hf_hub_download
 
+load_dotenv()
+
 ROOT = Path(__file__).resolve().parent.parent
-DATA_DIR = Path(os.environ.get("TAOCI_DATA_DIR", ROOT / "np-l20-res-16k"))
+DATA_DIR = ROOT / "np-l20-res-16k"
 UMAP_BIN = ROOT / "web" / "umap.bin"
 
 S3_BUCKET = "neuronpedia-datasets"
