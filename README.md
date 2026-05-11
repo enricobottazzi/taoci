@@ -108,8 +108,26 @@ python scripts/umap_vectors.py     # caches np-l20-res-16k/umap.npy, writes umap
 
 Cosine metric matches the (already unit-norm) row geometry. The embedding is cached; re-run with `--recompute` to refit.
 
+## 5. Rescore an explanation with a different LLM
+
+Re-run delphi's `DetectionScorer` (= `eleuther_recall`) on one (feature, explanation) pair using any OpenRouter model as the scorer:
+
+```bash
+pip install "eai-delphi @ git+https://github.com/EleutherAI/delphi" transformers torch
+export OPENROUTER_API_KEY=...
+# Tokenizer defaults to ungated `unsloth/gemma-2-2b` (same vocab as google/gemma-2-2b).
+# If you have access to the gated repo: `hf auth login` + `--tokenizer google/gemma-2-2b`.
+
+python scripts/rescore_explanation.py \
+  --feature 877 \
+  --explainer gemini-2.5-flash-lite \
+  --scorer-model anthropic/claude-sonnet-4.5 \
+  --n-test 20 --n-distractors 20
+```
+
+Tests are the activating contexts shown to the scorer (positive class). Distractors are the top-activating contexts of the feature's nearest neighbours (read from `features/`'s precomputed `topkCosSimIndices`); seed `42` matches delphi. Absolute balanced accuracy may still diverge slightly from Neuronpedia's stored `value` because their neighbour pool is sampled from the full activation matrix, not the cached top-44 cache.
+
 ## TODO
 
-- [x] UMAP
 - [ ] Clustering (Hexbin techniques + colouring) via hexagons (viz techniques)
 
