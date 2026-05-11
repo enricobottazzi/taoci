@@ -1,0 +1,14 @@
+fastapi
+uvicorn[standard]
+psycopg[binary]
+pyjwt
+passlib[argon2]
+
+boto3
+numpy
+umap-learn
+huggingface_hub
+
+torch
+transformers
+eai-delphi @ git+https://github.com/EleutherAI/delphi
