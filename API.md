@@ -3,9 +3,9 @@
 Three boxes:
 
 ```
-┌──────────┐   HTTPS + JWT    ┌────────────────────┐   service-role   ┌──────────────┐
-│ frontend │ ───────────────► │ scoring server     │ ───────────────► │ Supabase     │
-│ (static) │                  │ (FastAPI, Render)  │                  │ (auth + DB)  │
+┌──────────┐   HTTPS + JWT    ┌────────────────────┐   DATABASE_URL   ┌──────────────┐
+│ frontend │ ───────────────► │ scoring server     │ ───────────────► │ Postgres     │
+│ (static) │                  │ (FastAPI)          │                  │              │
 └──────────┘                  └─────────┬──────────┘                  └──────────────┘
                                         │ reads
                                         ▼
@@ -14,7 +14,7 @@ Three boxes:
 
 - **Frontend** is dumb: only talks to the scoring server.
 - **Scoring server** is the only thing that holds DB credentials. Every read and write goes through it.
-- **Supabase** is used purely as a managed Postgres + auth backend (gotrue). The frontend never opens a direct connection.
+- **Postgres** is any managed or self-hosted instance reachable via `DATABASE_URL`. The frontend never opens a direct connection.
 - **Static dataset** (UMAP, activations) ships with the server.
 ---
 
@@ -26,41 +26,15 @@ Three boxes:
 | `np-l20-res-16k/activations/batch-*.jsonl.gz` | ~314 MB (16 files) | BE only | positives for `/play` (`top_activations`) and `/score`, distractors for `/score` |
 | `np-l20-res-16k/features/batch-*.jsonl.gz` | ~14 MB (16 files) | BE only | `topkCosSimIndices` (precomputed neighbour list) for `/score` |
 
-The BE dataset is **not** committed or baked into the image. On container boot, an entrypoint pulls the two folders from S3 into a writable mount (e.g. Render disk or `/data`):
-
-```bash
-aws s3 cp --no-sign-request --recursive \
-  s3://neuronpedia-datasets/v1/gemma-2-2b/20-gemmascope-res-16k/activations/ \
-  "$TAOCI_DATA_DIR/activations/"
-aws s3 cp --no-sign-request --recursive \
-  s3://neuronpedia-datasets/v1/gemma-2-2b/20-gemmascope-res-16k/features/ \
-  "$TAOCI_DATA_DIR/features/"
-```
-
-Runtime layout:
-
-```
-/app/
-├── server/app.py            # FastAPI, reads $TAOCI_DATA_DIR
-├── web/                     # served via StaticFiles
-│   ├── *.html
-│   └── umap.bin
-└── entrypoint.sh            # idempotent S3 sync, then `uvicorn server.app:app`
-
-$TAOCI_DATA_DIR/             # outside the image, persisted across deploys
-├── activations/batch-*.jsonl.gz
-└── features/batch-*.jsonl.gz
-```
-
 ---
 
 ## 2. Server API
 
-FastAPI on Render. Holds `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_JWT_SECRET`, `OPENROUTER_API_KEY`. Protected routes require `Authorization: Bearer <jwt>`; the server validates the JWT locally and reads `sub` as the user id.
+FastAPI. Holds `DATABASE_URL`, `JWT_SECRET`, `OPENROUTER_API_KEY`. Protected routes require `Authorization: Bearer <jwt>`; the server validates the JWT locally (HS256 over `JWT_SECRET`) and reads `sub` as the user id.
 
 ### `GET /healthz`  *(public)*
 
-**Role**: liveness probe for Render. Returns `{ ok: true, model_loaded: true }` once the tokenizer is warm. No auth, no DB.
+**Role**: liveness probe. Returns `{ ok: true, model_loaded: true }` once the tokenizer is warm. No auth, no DB.
 
 ### `POST /auth`  *(public)*
 
@@ -109,16 +83,20 @@ Errors are uniform: `{ "error": "<code>", "message": "<human>" }`. 401 (auth), 4
 
 ---
 
-## 3. Database (hosted on Supabase)
+## 3. Database (Postgres)
 
-Auth is delegated to Supabase gotrue (`auth.users` stores `encrypted_password`). The app schema is two tables + one view.
+Two tables + one view. Passwords are hashed with argon2id (`passlib[argon2]`) and stored on `profiles`; JWTs are issued and verified by the server itself.
 
 ```sql
--- 1:1 with auth.users, holds the app-level username
+create extension if not exists citext;
+create extension if not exists pgcrypto;  -- for gen_random_uuid()
+
+-- one row per user
 create table profiles (
-  id          uuid primary key references auth.users(id) on delete cascade,
-  username    citext unique not null check (char_length(username) between 2 and 32),
-  created_at  timestamptz not null default now()
+  id             uuid primary key default gen_random_uuid(),
+  username       citext unique not null check (char_length(username) between 2 and 32),
+  password_hash  text not null,
+  created_at     timestamptz not null default now()
 );
 
 -- append-only event log: one row per /score call
@@ -156,7 +134,7 @@ Endpoint → query map:
 
 | endpoint | query |
 | --- | --- |
-| `POST /auth` | gotrue `sign_up` / `sign_in_with_password`; server upserts `profiles` on signup. |
+| `POST /auth` | `select id, password_hash from profiles where username=$1`; verify argon2id, else `insert into profiles ...`. Issue HS256 JWT with `sub=id`. |
 | `GET /play` | random `feature_id` → `select * from feature_best where feature_id = $1`. |
 | `GET /map` features | `select feature_id, username, label, score, found_at from feature_best`. |
 | `GET /map` leaderboard | `select username, count(*) features_led, avg(score) avg_score from feature_best group by username order by features_led desc`. |
