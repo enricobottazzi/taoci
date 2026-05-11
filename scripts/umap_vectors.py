@@ -4,6 +4,7 @@
 Input:  np-l20-res-16k/vectors.npy            (16384, 2304) unit-norm
 Output: np-l20-res-16k/umap.npy               (16384, 2) embedding (cached)
         np-l20-res-16k/umap.png               static scatter
+        web/umap.bin                          raw float32 LE (x,y) for web viewer
 """
 import argparse
 from pathlib import Path
@@ -16,6 +17,7 @@ def main() -> None:
     p.add_argument("--vectors", default="np-l20-res-16k/vectors.npy")
     p.add_argument("--out-embed", default="np-l20-res-16k/umap.npy")
     p.add_argument("--out-png", default="np-l20-res-16k/umap.png")
+    p.add_argument("--out-bin", default="web/umap.bin")
     p.add_argument("--n-neighbors", type=int, default=15)
     p.add_argument("--min-dist", type=float, default=0.1)
     p.add_argument("--metric", default="cosine")
@@ -44,6 +46,11 @@ def main() -> None:
     ax.set_title(f"UMAP of W_dec ({len(emb)} features)")
     fig.tight_layout(); fig.savefig(a.out_png)
     print(f"wrote {a.out_png}")
+
+    bin_path = Path(a.out_bin)
+    bin_path.parent.mkdir(parents=True, exist_ok=True)
+    bin_path.write_bytes(emb.astype("<f4").tobytes())
+    print(f"wrote {bin_path} ({emb.shape}, {bin_path.stat().st_size} bytes)")
 
 
 if __name__ == "__main__":

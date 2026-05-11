@@ -127,7 +127,10 @@ python scripts/rescore_explanation.py \
 
 Tests are the activating contexts shown to the scorer (positive class). Distractors are the top-activating contexts of the feature's nearest neighbours (read from `features/`'s precomputed `topkCosSimIndices`); seed `42` matches delphi. Absolute balanced accuracy may still diverge slightly from Neuronpedia's stored `value` because their neighbour pool is sampled from the full activation matrix, not the cached top-44 cache.
 
-## TODO
+## 6. Web viewer (retro UMAP)
 
-- [ ] Clustering (Hexbin techniques + colouring) via hexagons (viz techniques)
+```bash
+python -m http.server -d web 8000             # open http://localhost:8000
+```
 
+`[ + ]` overlays a 3×3 grid; click a cell to zoom in. `[ − ]` pops one level. `Esc` cancels picking.
