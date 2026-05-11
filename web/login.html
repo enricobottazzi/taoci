@@ -13,10 +13,12 @@
   input { background: #000; color: #fff; border: 1px solid #fff;
           font: inherit; padding: 4px 6px; outline: none; width: 24ch; }
   input:focus { background: #fff; color: #000; }
-  a.btn { grid-column: 1 / -1; margin-top: 6px; background: #000; color: #fff;
-          border: 1px solid #fff; padding: 6px; letter-spacing: 4px;
-          text-align: center; text-decoration: none; cursor: pointer; }
-  a.btn:hover { background: #fff; color: #000; }
+  .btn { grid-column: 1 / -1; margin-top: 6px; background: #000; color: #fff;
+         border: 1px solid #fff; padding: 6px; letter-spacing: 4px;
+         text-align: center; text-decoration: none; cursor: pointer;
+         font: inherit; }
+  .btn:hover:not(:disabled) { background: #fff; color: #000; }
+  .btn:disabled { opacity: 0.5; cursor: default; }
   p.hint { grid-column: 1 / -1; margin: 0 0 4px; font-size: 11px;
            opacity: 0.5; }
 </style>
@@ -25,7 +27,7 @@
   <form id="f" autocomplete="off">
     <p class="hint">new user? pick a fresh new username and password</p>
     <label for="u">USERNAME</label><input id="u" required minlength="2" maxlength="32" pattern="[A-Za-z0-9_\-]+" />
-    <label for="p">PASSWORD</label><input id="p" type="password" required minlength="8" maxlength="256" />
+    <label for="p">PASSWORD</label><input id="p" type="password" required />
     <button class="btn" type="submit">ENTER</button>
     <p id="err" class="hint" style="color:#f55;display:none"></p>
   </form>

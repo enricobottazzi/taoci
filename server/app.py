@@ -61,7 +61,7 @@ def require_user(creds: HTTPAuthorizationCredentials = Depends(bearer)) -> dict:
 
 class AuthIn(BaseModel):
     username: str = Field(min_length=2, max_length=32)
-    password: str = Field(min_length=8, max_length=256)
+    password: str = Field(min_length=2, max_length=256)
 
 
 @app.get("/healthz")
