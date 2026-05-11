@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>PLAY — retro</title>
+<style>
+  html, body { margin: 0; min-height: 100%; background: #000; color: #fff;
+               font-family: ui-monospace, Menlo, monospace; }
+  #wrap { max-width: 880px; margin: 0 auto; padding: 24px;
+          display: flex; flex-direction: column; gap: 16px; }
+  #bar { display: flex; align-items: center; gap: 12px; }
+  #bar a { color: #fff; text-decoration: none; border: 1px solid #fff;
+           padding: 6px 12px; letter-spacing: 2px; font-size: 12px; }
+  #bar a:hover { background: #fff; color: #000; }
+  h1 { margin: 0; font-size: 14px; font-weight: normal; letter-spacing: 4px; }
+  #card { border: 1px solid #fff; padding: 16px 18px; font-size: 13px; }
+  dl { margin: 0; display: grid; grid-template-columns: 10ch 1fr;
+       row-gap: 6px; column-gap: 12px; }
+  dt { opacity: 0.5; }
+  dd { margin: 0; }
+  h2 { margin: 0 0 12px; font-size: 12px; font-weight: normal; letter-spacing: 2px; }
+  #examples { display: flex; flex-direction: column; gap: 10px; }
+  .ex { border: 1px solid rgba(255,255,255,0.25); padding: 8px 10px;
+        font-size: 13px; line-height: 1.7; white-space: pre-wrap;
+        word-break: break-word; }
+  .tk { padding: 0 1px; }
+  .empty { opacity: 0.5; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="bar">
+    <a href="map.html">BACK</a>
+  </div>
+  <div id="card">
+    <dl>
+      <dt>TARGET</dt><dd id="p-id">—</dd>
+      <dt>LABEL</dt><dd id="p-label">—</dd>
+      <dt>FOUND BY</dt><dd id="p-disc">—</dd>
+      <dt>SCORE</dt><dd id="p-score">—</dd>
+    </dl>
+  </div>
+  <div id="card">
+    <h2>== TOP ACTIVATIONS ==</h2>
+    <div id="examples" class="empty">loading…</div>
+  </div>
+</div>
+<script>
+const LEADERS = ["neo","trinity","morpheus","cypher","tank","dozer","mouse","switch","apoc","smith"];
+function hash32(s) { let h = 2166136261 >>> 0;
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return h >>> 0; }
+function mulberry32(a) { return () => {
+  a = (a + 0x6D2B79F5) >>> 0; let t = a;
+  t = Math.imul(t ^ (t >>> 15), t | 1);
+  t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+
+const id = +new URLSearchParams(location.search).get("id");
+const pId = document.getElementById("p-id");
+const pLabel = document.getElementById("p-label");
+const pDisc = document.getElementById("p-disc");
+const pScore = document.getElementById("p-score");
+const exEl = document.getElementById("examples");
+if (Number.isFinite(id) && id >= 0) {
+  pId.textContent = `#${id}`;
+  pLabel.textContent = `feature explanation placeholder`;
+  pDisc.textContent = LEADERS[hash32("d" + id) % LEADERS.length];
+  pScore.textContent = mulberry32(hash32("s" + id))().toFixed(3);
+  fetch(`activations/${id}.json`).then(r => r.json()).then(raw => {
+    const seen = new Set();
+    const exs = raw.filter(e => { const k = e.tokens.join("\0"); return !seen.has(k) && seen.add(k); });
+    const mx = Math.max(...exs.map(e => e.max));
+    exEl.classList.remove("empty");
+    exEl.innerHTML = exs.map(e =>
+      `<div class="ex">${e.tokens.map((t, i) => {
+        const a = (e.values[i] / mx).toFixed(3);
+        const txt = t.replace(/▁/g, " ").replace(/</g, "&lt;").replace(/\n/g, "↵");
+        return `<span class="tk" style="background:rgba(255,165,0,${a})">${txt}</span>`;
+      }).join("")}</div>`
+    ).join("");
+  }).catch(() => { exEl.textContent = "no activations available"; });
+}
+</script>
+</body>
+</html>

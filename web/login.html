@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>taoci — login</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; color: #fff;
+               font-family: ui-monospace, Menlo, monospace; }
+  body { display: flex; align-items: center; justify-content: center; }
+  form { display: grid; grid-template-columns: auto auto; gap: 8px 12px;
+         justify-content: start; }
+  label { align-self: center; opacity: 0.6; font-size: 11px; letter-spacing: 1px; }
+  input { background: #000; color: #fff; border: 1px solid #fff;
+          font: inherit; padding: 4px 6px; outline: none; width: 24ch; }
+  input:focus { background: #fff; color: #000; }
+  a.btn { grid-column: 1 / -1; margin-top: 6px; background: #000; color: #fff;
+          border: 1px solid #fff; padding: 6px; letter-spacing: 4px;
+          text-align: center; text-decoration: none; cursor: pointer; }
+  a.btn:hover { background: #fff; color: #000; }
+  p.hint { grid-column: 1 / -1; margin: 0 0 4px; font-size: 11px;
+           opacity: 0.5; }
+</style>
+</head>
+<body>
+  <form autocomplete="off">
+    <p class="hint">new user? pick a fresh new username and password</p>
+    <label for="u">USERNAME</label><input id="u" />
+    <label for="p">PASSWORD</label><input id="p" type="password" />
+    <a class="btn" href="map.html">ENTER</a>
+  </form>
+</body>
+</html>
