@@ -22,10 +22,35 @@ Three boxes:
 
 | path | size | who reads | notes |
 | --- | --- | --- | --- |
-| `/static/umap.bin` | ~130 KB | FE | `Float32Array(N, 2)` star positions for `/map` (only FE-fetched static asset) |
-| `features/{id}.json` | ~5 KB × 16384 | BE only | `{ top_activations: [...] }` — inlined by `/play` |
-| `np-l20-res-16k/activations/` | ~1.5 GB | BE only | positives + distractors for `/score` |
-| `np-l20-res-16k/features/` | ~50 MB | BE only | `topkCosSimIndices` (precomputed neighbor list) for `/score` |
+| `web/umap.bin` | ~130 KB | FE | `Float32Array(N, 2)` star positions for `/map` (only FE-fetched static asset) |
+| `np-l20-res-16k/activations/batch-*.jsonl.gz` | ~314 MB (16 files) | BE only | positives for `/play` (`top_activations`) and `/score`, distractors for `/score` |
+| `np-l20-res-16k/features/batch-*.jsonl.gz` | ~14 MB (16 files) | BE only | `topkCosSimIndices` (precomputed neighbour list) for `/score` |
+
+The BE dataset is **not** committed or baked into the image. On container boot, an entrypoint pulls the two folders from S3 into a writable mount (e.g. Render disk or `/data`):
+
+```bash
+aws s3 cp --no-sign-request --recursive \
+  s3://neuronpedia-datasets/v1/gemma-2-2b/20-gemmascope-res-16k/activations/ \
+  "$TAOCI_DATA_DIR/activations/"
+aws s3 cp --no-sign-request --recursive \
+  s3://neuronpedia-datasets/v1/gemma-2-2b/20-gemmascope-res-16k/features/ \
+  "$TAOCI_DATA_DIR/features/"
+```
+
+Runtime layout:
+
+```
+/app/
+├── server/app.py            # FastAPI, reads $TAOCI_DATA_DIR
+├── web/                     # served via StaticFiles
+│   ├── *.html
+│   └── umap.bin
+└── entrypoint.sh            # idempotent S3 sync, then `uvicorn server.app:app`
+
+$TAOCI_DATA_DIR/             # outside the image, persisted across deploys
+├── activations/batch-*.jsonl.gz
+└── features/batch-*.jsonl.gz
+```
 
 ---
 
