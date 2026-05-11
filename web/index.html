@@ -6,12 +6,25 @@
 <style>
   html, body { margin: 0; height: 100%; background: #000; overflow: hidden;
                font-family: ui-monospace, Menlo, monospace; color: #fff; }
-  #app { display: flex; height: 100vh; }
-  #map { flex: 1; position: relative; min-width: 0; }
+  #app { display: flex; align-items: flex-start; height: 100vh; }
+  #map { flex: 1; position: relative; min-width: 0; height: 100vh; }
   canvas { display: block; width: 100%; height: 100%; image-rendering: pixelated; }
-  #board { width: 240px; align-self: flex-start; border: 1px solid #fff;
-           border-right: none; padding: 12px 14px; box-sizing: border-box;
-           font-size: 12px; }
+  #side { width: 240px; display: flex; flex-direction: column; }
+  #board, #detail { border: 1px solid #fff; border-right: none;
+                    padding: 12px 14px; box-sizing: border-box;
+                    font-size: 12px; }
+  #detail { border-top: none; }
+  #detail h2 { margin: 0 0 10px; font-size: 12px; font-weight: normal;
+               letter-spacing: 1px; }
+  #detail dl { margin: 0; display: grid;
+               grid-template-columns: 9ch 1fr; row-gap: 4px; column-gap: 8px; }
+  #detail dt { opacity: 0.5; }
+  #detail dd { margin: 0; min-width: 0; white-space: nowrap;
+               overflow: hidden; text-overflow: ellipsis; }
+  #detail dd#d-label { white-space: normal; display: -webkit-box;
+               -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+               min-height: 2.4em; }
+  #detail.empty dd { opacity: 0.35; }
   #board h2 { margin: 0 0 10px; font-size: 12px; font-weight: normal;
               letter-spacing: 1px; }
   #board ol { list-style: none; margin: 0; padding: 0; }
@@ -52,6 +65,9 @@
   #ui button:hover:not(:disabled) { background: #fff; color: #000; }
   #ui button:disabled { opacity: 0.35; cursor: not-allowed; }
   #lvl { padding: 0 4px; font-size: 12px; opacity: 0.7; }
+  #tip { position: fixed; pointer-events: none; background: #000;
+         border: 1px solid #fff; padding: 3px 6px; font-size: 12px;
+         white-space: nowrap; display: none; }
 </style>
 </head>
 <body>
@@ -77,11 +93,24 @@
       </div>
     </div>
   </div>
-  <aside id="board">
-    <h2>== LEADERBOARD ==</h2>
-    <ol id="rows"></ol>
+  <aside id="side">
+    <div id="board">
+      <h2>== LEADERBOARD ==</h2>
+      <ol id="rows"></ol>
+    </div>
+    <div id="detail" class="empty">
+      <h2>== FEATURE ==</h2>
+      <dl>
+        <dt>ID</dt><dd id="d-id">—</dd>
+        <dt>LABEL</dt><dd id="d-label">—</dd>
+        <dt>FOUND BY</dt><dd id="d-disc">—</dd>
+        <dt>FOUND AT</dt><dd id="d-date">—</dd>
+        <dt>SCORE</dt><dd id="d-score">—</dd>
+      </dl>
+    </div>
   </aside>
 </div>
+<div id="tip"></div>
 <script>
 const LEADERS = [
   ["neo",       1287],
@@ -127,7 +156,34 @@ const PIXEL = 1, ARM = 1, MARGIN = 0.04, GRID = 3, MAX_LEVEL = 3;
   const zinBtn = document.getElementById("zin");
   const zoutBtn = document.getElementById("zout");
   const lvlEl = document.getElementById("lvl");
+  const tip = document.getElementById("tip");
 
+  const explain = i => `feature explanation placeholder`;
+  const discoverer = i => LEADERS[hash32("d" + i) % LEADERS.length][0];
+  const foundAt = i => {
+    const d = new Date(2024, 0, 1 + (hash32("t" + i) % 700));
+    return d.toISOString().slice(0, 10);
+  };
+
+  const detail = document.getElementById("detail");
+  const dId = document.getElementById("d-id");
+  const dLabel = document.getElementById("d-label");
+  const dDisc = document.getElementById("d-disc");
+  const dDate = document.getElementById("d-date");
+  const dScore = document.getElementById("d-score");
+  const setDetail = i => {
+    if (i < 0) {
+      detail.classList.add("empty");
+      dId.textContent = dLabel.textContent = dDisc.textContent = dDate.textContent = dScore.textContent = "—";
+      return;
+    }
+    detail.classList.remove("empty");
+    dId.textContent = `#${i}`;
+    dLabel.textContent = explain(i);
+    dDisc.textContent = discoverer(i);
+    dDate.textContent = foundAt(i);
+    dScore.textContent = scores[i].toFixed(3);
+  };
   const CATEGORIES = [
     "NEBULAE", "STAR FORGE", "VOID DRIFT", "PLASMA SEA", "QUASAR FIELD",
     "DARK MATTER", "PULSAR BELT", "COMET TRAIL", "WORMHOLE", "ION STORM",
@@ -246,11 +302,42 @@ const PIXEL = 1, ARM = 1, MARGIN = 0.04, GRID = 3, MAX_LEVEL = 3;
   window.addEventListener("keydown", e => {
     if (e.key === "Escape" && picking) { picking = false; refreshUI(); draw(); }
   });
+  function nearestStar(ev) {
+    const dpr = window.devicePixelRatio || 1;
+    const r = cvs.getBoundingClientRect();
+    const mx = (ev.clientX - r.left) * dpr, my = (ev.clientY - r.top) * dpr;
+    const { scale, ox, oy } = project(cvs.width, cvs.height);
+    const v = view();
+    const a = ARM * GRID ** (stack.length - 1);
+    const r2max = (a + 4) ** 2;
+    let best = -1, bestD = r2max;
+    for (let k = 0; k < N; k++) {
+      if (scores[k] < sMin || scores[k] > sMax) continue;
+      const x = pts[2 * k], y = pts[2 * k + 1];
+      if (x < v.x0 || x > v.x1 || y < v.y0 || y > v.y1) continue;
+      const dx = x * scale + ox - mx, dy = y * scale + oy - my;
+      const d = dx * dx + dy * dy;
+      if (d < bestD) { bestD = d; best = k; }
+    }
+    return best;
+  }
+
   cvs.addEventListener("mousemove", e => {
-    if (!picking) return;
-    const h = hitTest(e);
-    if (h !== hover) { hover = h; draw(); }
+    if (picking) {
+      const h = hitTest(e);
+      if (h !== hover) { hover = h; draw(); }
+      tip.style.display = "none";
+      return;
+    }
+    const idx = nearestStar(e);
+    setDetail(idx);
+    if (idx < 0) { tip.style.display = "none"; return; }
+    tip.textContent = `#${idx} ${explain(idx)}`;
+    tip.style.left = (e.clientX + 12) + "px";
+    tip.style.top  = (e.clientY + 12) + "px";
+    tip.style.display = "block";
   });
+  cvs.addEventListener("mouseleave", () => { tip.style.display = "none"; setDetail(-1); });
   cvs.addEventListener("click", e => {
     if (!picking) return;
     const i = hitTest(e);
