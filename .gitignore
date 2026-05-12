@@ -186,3 +186,4 @@ np-l20-res-16k/
 # Local dev
 docker-compose.yml
 GUIDE.md
+tmp/
