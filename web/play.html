@@ -19,6 +19,9 @@
   dt { opacity: 0.5; }
   dd { margin: 0; }
   h2 { margin: 0 0 12px; font-size: 12px; font-weight: normal; letter-spacing: 2px; }
+  .desc { opacity: 0.5; font-size: 11px; margin: 0 0 10px; letter-spacing: 1px; }
+  .count { opacity: 0.5; font-size: 11px; letter-spacing: 1px; }
+  #submitRow { display: flex; align-items: center; gap: 12px; margin-top: 8px; }
   #examples { display: flex; flex-direction: column; gap: 10px; }
   .ex { border: 1px solid rgba(255,255,255,0.25); padding: 8px 10px;
         font-size: 13px; line-height: 1.7; white-space: pre-wrap;
@@ -30,12 +33,10 @@
              padding: 8px; outline: none; min-height: 64px; resize: vertical; }
   textarea:focus { background: #fff; color: #000; }
   button { background: #000; color: #fff; border: 1px solid #fff; font: inherit;
-           padding: 8px 18px; letter-spacing: 4px; cursor: pointer;
-           margin-top: 8px; }
+           padding: 8px 18px; letter-spacing: 4px; cursor: pointer; }
   button:hover:not(:disabled) { background: #fff; color: #000; }
   button:disabled { opacity: 0.4; cursor: not-allowed; }
-  #submitBox { margin-top: 8px; min-height: 36px; font-size: 13px;
-               display: flex; align-items: center; gap: 10px; }
+  #submitBox { font-size: 13px; display: inline-flex; align-items: center; gap: 10px; }
   #submitBox .hint { opacity: 0.5; font-size: 11px; letter-spacing: 1px; }
   #submitBox .score { font-size: 20px; letter-spacing: 4px; }
   #submitBox.err { color: #f66; }
@@ -48,18 +49,23 @@
     <a href="map.html">BACK</a>
   </div>
   <div id="card">
+    <h2>== FEATURE ==</h2>
     <dl>
-      <dt>TARGET</dt><dd id="p-id">—</dd>
+      <dt>ID</dt><dd id="p-id">—</dd>
       <dt>LABEL</dt><dd id="p-label">—</dd>
       <dt>FOUND BY</dt><dd id="p-disc">—</dd>
+      <dt>FOUND AT</dt><dd id="p-date">—</dd>
       <dt>SCORE</dt><dd id="p-score">—</dd>
     </dl>
   </div>
   <div id="card">
-    <h2>== YOUR EXPLANATION ==</h2>
-    <textarea id="exp" placeholder="describe what this feature seems to detect…"></textarea>
-    <div id="submitBox">
+    <h2>== YOUR SUGGESTED LABEL ==</h2>
+    <p class="desc">label the concept that the activation examples below seem to share in common</p>
+    <textarea id="exp" maxlength="1000"></textarea>
+    <div id="submitRow">
       <button id="submit" type="button">SUBMIT</button>
+      <span class="count"><span id="count">0</span>/1000</span>
+      <span id="submitBox"></span>
     </div>
   </div>
   <div id="card">
@@ -82,12 +88,14 @@ const id = +new URLSearchParams(location.search).get("id");
 const pId = document.getElementById("p-id");
 const pLabel = document.getElementById("p-label");
 const pDisc = document.getElementById("p-disc");
+const pDate = document.getElementById("p-date");
 const pScore = document.getElementById("p-score");
 const exEl = document.getElementById("examples");
 if (Number.isFinite(id) && id >= 0) {
   pId.textContent = `#${id}`;
   pLabel.textContent = `feature explanation placeholder`;
   pDisc.textContent = LEADERS[hash32("d" + id) % LEADERS.length];
+  pDate.textContent = "—";
   pScore.textContent = mulberry32(hash32("s" + id))().toFixed(3);
   fetch(`activations/${id}.json`).then(r => r.json()).then(raw => {
     const seen = new Set();
@@ -106,6 +114,8 @@ if (Number.isFinite(id) && id >= 0) {
   const expEl = document.getElementById("exp");
   const box = document.getElementById("submitBox");
   const btn = document.getElementById("submit");
+  const cnt = document.getElementById("count");
+  expEl.addEventListener("input", () => { cnt.textContent = expEl.value.length; });
   btn.addEventListener("click", async () => {
     const description = expEl.value.trim();
     box.classList.remove("err");
