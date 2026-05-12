@@ -21,9 +21,8 @@
   #detail dt { opacity: 0.5; }
   #detail dd { margin: 0; min-width: 0; white-space: nowrap;
                overflow: hidden; text-overflow: ellipsis; }
-  #detail dd#d-label { white-space: normal; display: -webkit-box;
-               -webkit-line-clamp: 2; -webkit-box-orient: vertical;
-               min-height: 2.4em; }
+  #detail dd#d-label { white-space: normal; word-break: break-word;
+               height: 8em; overflow-y: auto; }
   #detail.empty dd { opacity: 0.35; }
   #board h2 { margin: 0 0 10px; font-size: 12px; font-weight: normal;
               letter-spacing: 1px; }
@@ -180,7 +179,7 @@ const PIXEL = 1, ARM = 1, MARGIN = 0.04, GRID = 3, MAX_LEVEL = 3;
     dLabel.textContent = explain(i);
     dDisc.textContent = discoverer(i);
     dDate.textContent = foundAt(i);
-    dScore.textContent = feats[i] ? scores[i].toFixed(3) : "—";
+    dScore.textContent = feats[i] && Number.isFinite(scores[i]) ? scores[i].toFixed(3) : "—";
   };
   const CATEGORIES = [
     "NEBULAE", "STAR FORGE", "VOID DRIFT", "PLASMA SEA", "QUASAR FIELD",
@@ -195,7 +194,7 @@ const PIXEL = 1, ARM = 1, MARGIN = 0.04, GRID = 3, MAX_LEVEL = 3;
 
   const N = pts.length / 2;
   const scores = new Float32Array(N);
-  for (let i = 0; i < N; i++) scores[i] = feats[i]?.score ?? 0;
+  for (let i = 0; i < N; i++) scores[i] = feats[i]?.score ?? NaN;
   let sMin = 0, sMax = 1;
 
   const stack = [{ x0: xMin, y0: yMin, x1: xMax, y1: yMax }];
@@ -240,7 +239,7 @@ const PIXEL = 1, ARM = 1, MARGIN = 0.04, GRID = 3, MAX_LEVEL = 3;
       ctx.fillRect(px - a, py, len, t);
       ctx.fillRect(px, py - a, t, len);
     };
-    const inRange = k => scores[k] >= sMin && scores[k] <= sMax;
+    const inRange = k => !Number.isFinite(scores[k]) || (scores[k] >= sMin && scores[k] <= sMax);
     const inView = k => {
       const x = pts[2 * k], y = pts[2 * k + 1];
       return x >= v.x0 && x <= v.x1 && y >= v.y0 && y <= v.y1;
@@ -320,7 +319,7 @@ const PIXEL = 1, ARM = 1, MARGIN = 0.04, GRID = 3, MAX_LEVEL = 3;
     const r2max = (a + 4) ** 2;
     let best = -1, bestD = r2max;
     for (let k = 0; k < N; k++) {
-      if (scores[k] < sMin || scores[k] > sMax) continue;
+      if (Number.isFinite(scores[k]) && (scores[k] < sMin || scores[k] > sMax)) continue;
       const x = pts[2 * k], y = pts[2 * k + 1];
       if (x < v.x0 || x > v.x1 || y < v.y0 || y > v.y1) continue;
       const dx = x * scale + ox - mx, dy = y * scale + oy - my;

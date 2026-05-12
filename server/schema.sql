@@ -13,8 +13,8 @@ create table if not exists submissions (
   user_id          uuid not null references profiles(id) on delete cascade,
   feature_id       int  not null check (feature_id between 0 and 16383),
   label            text not null check (char_length(label) between 1 and 1000),
-  score            real not null check (score between 0 and 1),
-  scorer_model_id  text not null,
+  score            real check (score between 0 and 1),
+  scorer_model_id  text,
   created_at       timestamptz not null default now()
 );
 
@@ -35,4 +35,4 @@ select distinct on (s.feature_id)
   s.created_at as found_at
 from submissions s
 join profiles p on p.id = s.user_id
-order by s.feature_id, s.score desc, s.created_at asc;
+order by s.feature_id, s.score desc nulls last, s.created_at asc;

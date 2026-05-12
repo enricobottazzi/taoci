@@ -1,6 +1,4 @@
-# taoci — deployment spec
-
-Three boxes:
+# taoci specs
 
 ```
 ┌──────────┐   HTTPS + JWT    ┌────────────────────┐   DATABASE_URL   ┌──────────────┐
@@ -15,7 +13,8 @@ Three boxes:
 - **Frontend** is dumb: only talks to the scoring server.
 - **Scoring server** is the only thing that holds DB credentials. Every read and write goes through it.
 - **Postgres** is any managed or self-hosted instance reachable via `DATABASE_URL`. The frontend never opens a direct connection.
-- **Static dataset** (UMAP, activations) ships with the server.
+- **Static dataset** (UMAP, activations) ships with the server and contains immutable data.
+
 ---
 
 ## 1. Static data (read-only, immutable per release)
@@ -105,8 +104,8 @@ create table submissions (
   user_id          uuid not null references profiles(id) on delete cascade,
   feature_id       int  not null check (feature_id between 0 and 16383),
   label            text not null check (char_length(label) between 1 and 1000),
-  score            real not null check (score between 0 and 1),
-  scorer_model_id  text not null,                 -- e.g. 'anthropic/claude-sonnet-4.5'
+  score            real check (score between 0 and 1),  -- null for seed rows
+  scorer_model_id  text,                                -- null for seed rows; e.g. 'anthropic/claude-sonnet-4.5'
   created_at       timestamptz not null default now()
 );
 
@@ -147,10 +146,10 @@ Endpoint → query map:
 `python -m server.bootstrap` runs five idempotent steps. Required env: `DATABASE_URL`, `NEURONPEDIA_API_KEY`.
 
 1. **`apply_schema`** — applies `server/schema.sql` to `DATABASE_URL` (creates `profiles`, `submissions`, view `feature_best`).
-2. **`sync_dataset`** — unsigned `boto3` reads from `s3://neuronpedia-datasets/v1/gemma-2-2b/20-gemmascope-res-16k/`, mirrors only `activations/` (~314 MB) and `features/` (~14 MB) into `./np-l20-res-16k/`. Skips files already present at the correct size. Other folders in that prefix (e.g. `vectors.npy`) are not synced.
-3. **`build_umap_bin`** — downloads `google/gemma-scope-2b-pt-res :: layer_20/width_16k/average_l0_71/params.npz` from HuggingFace, loads `W_dec` `(16384, 2304)`, runs `umap.UMAP(metric="cosine")`, writes `web/umap.bin` as little-endian `Float32Array(16384, 2)` (~130 KB). Skipped if file exists.
-4. **`fetch_explanation_scores`** — required: `NEURONPEDIA_API_KEY`. Calls `GET https://www.neuronpedia.org/api/feature/gemma-2-2b/20-gemmascope-res-16k/{i}` for `i ∈ [0, 16384)` in 16 batches of 1024, 8 concurrent workers, 5 retries with exponential backoff. Trims each response to `index` + `explanations[].(id, description, explanationModelName, typeName, scoreV1, scoreV2, scores, triggeredByUser)`. Writes `np-l20-res-16k/explanation-scores/batch-{0..15}.jsonl.gz`. Resumable: existing batch files are skipped.
-5. **`seed_submissions`** — reads the gzipped batches above. Ensures a `neuronpedia` profile exists (creates one with a random argon2 password if absent). For every explanation, filters `scores[]` to `explanationScoreTypeName == "eleuther_recall"` with non-null `value`, picks the max, and inserts `(user_id=neuronpedia, feature_id, label=description[:1000], score, scorer_model_id=explanationScoreModelName)` into `submissions`. Runs unconditionally — re-running appends another full pass of seed rows.
+2. **`sync_dataset`** — unsigned `boto3` reads from `s3://neuronpedia-datasets/v1/gemma-2-2b/20-gemmascope-res-16k/`, mirrors `activations/` (~314 MB) and `features/` (~14 MB) into `./np-l20-res-16k/`, downloading every object unconditionally. Other folders in that prefix (e.g. `vectors.npy`) are not synced.
+3. **`build_umap_bin`** — downloads `google/gemma-scope-2b-pt-res :: layer_20/width_16k/average_l0_71/params.npz` from HuggingFace, loads `W_dec` `(16384, 2304)`, runs `umap.UMAP(metric="cosine")`, writes `web/umap.bin` as little-endian `Float32Array(16384, 2)` (~130 KB), overwriting any existing file.
+4. **`fetch_explanations`** — required: `NEURONPEDIA_API_KEY`. Calls `GET https://www.neuronpedia.org/api/feature/gemma-2-2b/20-gemmascope-res-16k/{i}` for `i ∈ [0, 16384)` in 16 batches of 1024, 8 concurrent workers, 5 retries with exponential backoff. Trims each response to `index` + `explanations[].(id, description, explanationModelName, typeName, scoreV1, scoreV2, scores, triggeredByUser)`. Writes `np-l20-res-16k/explanation-scores/batch-{0..15}.jsonl.gz`. Resumable: existing batch files are skipped.
+5. **`seed_submissions`** — reads the gzipped batches above. Ensures a `neuronpedia` profile exists (creates one with a random argon2 password if absent). Deletes any prior submissions for that user, then for every explanation with a non-empty `description` inserts `(user_id=neuronpedia, feature_id, label=description[:1000], score=NULL, scorer_model_id=NULL, created_at='epoch')` into `submissions`. The `'epoch'` (1970-01-01) sentinel marks rows as predating the game so any real user submission outranks them via the `score desc, created_at asc` ordering of `feature_best`. Idempotent per `neuronpedia` user (prior seed rows are wiped on each run).
 
 | Step | Source | Destination | Consumer |
 | --- | --- | --- | --- |

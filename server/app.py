@@ -94,7 +94,8 @@ def map_data(_: dict = Depends(require_user)) -> dict:
             from feature_best
         """)
         features = [{"id": fid, "user": u, "label": lbl,
-                     "score": float(s), "found_at": fa.date().isoformat()}
+                     "score": float(s) if s is not None else None,
+                     "found_at": fa.date().isoformat()}
                     for fid, u, lbl, s, fa in cur.fetchall()]
     return {"leaderboard": leaderboard, "features": features}
 

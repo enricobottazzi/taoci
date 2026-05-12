@@ -47,7 +47,7 @@ NP_KEEP = ("id", "description", "explanationModelName", "typeName",
            "scoreV1", "scoreV2", "scores", "triggeredByUser")
 
 SEED_USER = "neuronpedia"
-SEED_METHOD = "eleuther_recall"
+SEED_CREATED_AT = "epoch"  # 1970-01-01 sentinel: row predates the game
 LABEL_MAX = 1000
 
 
@@ -69,17 +69,12 @@ def sync_dataset() -> None:
             for obj in page.get("Contents", []):
                 key = obj["Key"]
                 dst = local / Path(key).name
-                if dst.exists() and dst.stat().st_size == obj["Size"]:
-                    continue
                 s3.download_file(S3_BUCKET, key, str(dst))
                 print(f"[sync] {key} -> {dst}")
         print(f"[sync] {folder} OK ({sum(1 for _ in local.iterdir())} files)")
 
 
 def build_umap_bin(seed: int = 0) -> None:
-    if UMAP_BIN.exists():
-        print(f"[umap] {UMAP_BIN} exists, skip")
-        return
     import umap
     path = hf_hub_download(repo_id=HF_REPO, filename=HF_FILE)
     W = np.load(path)["W_dec"]
@@ -106,7 +101,7 @@ def _fetch_feature(idx: int, key: str, retries: int = 5) -> dict:
     raise RuntimeError(f"giving up on feature {idx}")
 
 
-def fetch_explanation_scores() -> None:
+def fetch_explanations() -> None:
     key = os.environ.get("NEURONPEDIA_API_KEY")
     if not key:
         raise SystemExit("NEURONPEDIA_API_KEY required")
@@ -162,22 +157,15 @@ def seed_submissions() -> None:
                     rec = json.loads(line)
                     fid = int(rec["index"])
                     for e in rec.get("explanations") or []:
-                        recalls = [s for s in (e.get("scores") or [])
-                                   if s.get("explanationScoreTypeName") == SEED_METHOD
-                                   and s.get("value") is not None]
-                        if not recalls:
-                            continue
-                        best = max(recalls, key=lambda s: s["value"])
                         label = (e.get("description") or "").strip()[:LABEL_MAX]
                         if not label:
                             continue
-                        rows.append((str(uid), fid, label, float(best["value"]),
-                                     best.get("explanationScoreModelName") or "unknown"))
+                        rows.append((str(uid), fid, label))
         if not rows:
-            print(f"[seed] no {SEED_METHOD} scores found"); return
+            print(f"[seed] no explanations found"); return
         cur.executemany(
-            "insert into submissions (user_id, feature_id, label, score, scorer_model_id) "
-            "values (%s, %s, %s, %s, %s)", rows,
+            "insert into submissions (user_id, feature_id, label, created_at) "
+            f"values (%s, %s, %s, '{SEED_CREATED_AT}')", rows,
         )
         print(f"[seed] inserted {len(rows)} submissions as {SEED_USER}")
 
@@ -186,5 +174,5 @@ if __name__ == "__main__":
     apply_schema()
     sync_dataset()
     build_umap_bin()
-    fetch_explanation_scores()
+    fetch_explanations()
     seed_submissions()
