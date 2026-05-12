@@ -103,7 +103,7 @@ def map_data(_: dict = Depends(require_user)) -> dict:
 
 @app.get("/play")
 def play(_: dict = Depends(require_user)) -> dict:
-    fid = secrets.randbelow(16384)
+    fid = secrets.randbelow(1000)
     with db() as conn, conn.cursor() as cur:
         cur.execute("""
             select username, label, score, found_at

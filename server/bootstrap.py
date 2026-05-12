@@ -36,7 +36,7 @@ HF_FILE = "layer_20/width_16k/average_l0_71/params.npz"
 NP_MODEL = "gemma-2-2b"
 NP_LAYER = "20-gemmascope-res-16k"
 NP_API = "https://www.neuronpedia.org/api/feature/{m}/{l}/{i}"
-NP_N_FEATURES = 16384
+NP_N_FEATURES = 1000
 NP_CONCURRENCY = 8
 NP_EXPL_KEEP = ("description", "explanationModelName", "scoreV1", "scoreV2", "scores")
 

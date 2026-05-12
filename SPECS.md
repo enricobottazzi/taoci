@@ -70,10 +70,10 @@ Errors are uniform: `{ "error": "<code>", "message": "<human>" }`. 401 (auth), 4
 
 ## 2. Static data (read-only, immutable per release)
 
-| path | notes |
-| --- | --- |
-| `web/umap.bin` | `Float32Array(N, 2)` star positions for `/map` (only FE-fetched static asset) |
-| `np-l20-res-16k/features/{i}.json.gz` | per-feature dataset fetched from `GET https://www.neuronpedia.org/api/feature/gemma-2-2b/20-gemmascope-res-16k/{i}`, trimmed to: `index`, `explanations[].(description, explanationModelName, scoreV1, scoreV2, scores)`, `buckets[].(binMin, binMax, binContains, count, examples[].(tokens, values, max))`, `neighbors[].(idx, cos)` |
+| path | size | notes |
+| --- | --- | --- |
+| `web/umap.bin` | 128 KB (16384 × 2 × f32, exact) | `Float32Array(N, 2)` star positions for `/map` (only FE-fetched static asset) |
+| `np-l20-res-16k/features/{i}.json.gz` | ~14.5 KB avg, ~230 MB total over 16384 files (range 5–220 KB) | per-feature dataset fetched from `GET https://www.neuronpedia.org/api/feature/gemma-2-2b/20-gemmascope-res-16k/{i}`, trimmed to: `index`, `explanations[].(description, explanationModelName, scoreV1, scoreV2, scores)`, `buckets[].(binMin, binMax, binContains, count, examples[].(tokens, values, max))`, `neighbors[].(idx, cos)` |
 
 ---
 
