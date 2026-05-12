@@ -12,7 +12,7 @@ create table if not exists submissions (
   submission_id    bigserial primary key,
   user_id          uuid not null references profiles(id) on delete cascade,
   feature_id       int  not null check (feature_id between 0 and 16383),
-  label            text not null check (char_length(label) between 1 and 500),
+  label            text not null check (char_length(label) between 1 and 1000),
   score            real not null check (score between 0 and 1),
   scorer_model_id  text not null,
   created_at       timestamptz not null default now()

@@ -28,23 +28,25 @@ requirements.txt
 
 ```bash
 cp .env.example .env
-# edit .env: DATABASE_URL, JWT_SECRET, OPENROUTER_API_KEY
+# edit .env: DATABASE_URL, JWT_SECRET, OPENROUTER_API_KEY, NEURONPEDIA_API_KEY
 ```
 
 `.env` is git-ignored. Both `server/app.py` and `server/bootstrap.py` load it via `python-dotenv`. In production (Render, Fly, etc.), set the same variables as platform env vars and skip the `.env` file.
 
-### 3. Bootstrap (run once per release)
+### 3. Bootstrap (run once)
 
 ```bash
 pip install -r requirements.txt
 python -m server.bootstrap
 ```
 
-Idempotent. Does three things:
+Idempotent. Does five things:
 
 1. Applies `server/schema.sql` to `$DATABASE_URL` (creates `profiles`, `submissions`, `feature_best`).
 2. `aws s3 sync` the two BE folders from the Neuronpedia public bucket into `./np-l20-res-16k/` (~330 MB).
 3. Fetches `vectors.npy`, runs UMAP, writes `web/umap.bin` (`Float32Array(N, 2)`, ~130 KB).
+4. Pulls per-feature explanations + scores from the Neuronpedia API into `np-l20-res-16k/explanation-scores/batch-*.jsonl.gz`. Resumable per batch. 
+5. Seeds databse with `submissions` as user `neuronpedia`: one row per explanation that has an `eleuther_recall` score, value = max across LLM judges for that method.
 
 ### 4. Run
 
