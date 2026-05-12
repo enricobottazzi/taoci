@@ -141,3 +141,23 @@ Endpoint → query map:
 | `POST /score` | `insert into submissions ...`; `is_new_best` = `not exists (select 1 from submissions where feature_id=$1 and submission_id<>$new and score>=$score)`. |
 
 ---
+
+## 4. Bootstrap data flow
+
+`python -m server.bootstrap` runs five idempotent steps. Required env: `DATABASE_URL`, `NEURONPEDIA_API_KEY`.
+
+1. **`apply_schema`** — applies `server/schema.sql` to `DATABASE_URL` (creates `profiles`, `submissions`, view `feature_best`).
+2. **`sync_dataset`** — unsigned `boto3` reads from `s3://neuronpedia-datasets/v1/gemma-2-2b/20-gemmascope-res-16k/`, mirrors only `activations/` (~314 MB) and `features/` (~14 MB) into `./np-l20-res-16k/`. Skips files already present at the correct size. Other folders in that prefix (e.g. `vectors.npy`) are not synced.
+3. **`build_umap_bin`** — downloads `google/gemma-scope-2b-pt-res :: layer_20/width_16k/average_l0_71/params.npz` from HuggingFace, loads `W_dec` `(16384, 2304)`, runs `umap.UMAP(metric="cosine")`, writes `web/umap.bin` as little-endian `Float32Array(16384, 2)` (~130 KB). Skipped if file exists.
+4. **`fetch_explanation_scores`** — required: `NEURONPEDIA_API_KEY`. Calls `GET https://www.neuronpedia.org/api/feature/gemma-2-2b/20-gemmascope-res-16k/{i}` for `i ∈ [0, 16384)` in 16 batches of 1024, 8 concurrent workers, 5 retries with exponential backoff. Trims each response to `index` + `explanations[].(id, description, explanationModelName, typeName, scoreV1, scoreV2, scores, triggeredByUser)`. Writes `np-l20-res-16k/explanation-scores/batch-{0..15}.jsonl.gz`. Resumable: existing batch files are skipped.
+5. **`seed_submissions`** — reads the gzipped batches above. Ensures a `neuronpedia` profile exists (creates one with a random argon2 password if absent). For every explanation, filters `scores[]` to `explanationScoreTypeName == "eleuther_recall"` with non-null `value`, picks the max, and inserts `(user_id=neuronpedia, feature_id, label=description[:1000], score, scorer_model_id=explanationScoreModelName)` into `submissions`. Runs unconditionally — re-running appends another full pass of seed rows.
+
+| Step | Source | Destination | Consumer |
+| --- | --- | --- | --- |
+| 1 | `server/schema.sql` | Postgres | server |
+| 2 | S3 (Neuronpedia public bucket) | `np-l20-res-16k/activations/`, `np-l20-res-16k/features/` | server runtime (`/play`, `/score`) |
+| 3 | HuggingFace `params.npz` (`W_dec`) | `web/umap.bin` | frontend (`/map`) |
+| 4 | Neuronpedia REST API | `np-l20-res-16k/explanation-scores/` | bootstrap step 5 only |
+| 5 | `np-l20-res-16k/explanation-scores/` | Postgres `submissions` (as `neuronpedia` user) | server runtime via `feature_best` |
+
+---

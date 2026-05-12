@@ -109,7 +109,7 @@ def _fetch_feature(idx: int, key: str, retries: int = 5) -> dict:
 def fetch_explanation_scores() -> None:
     key = os.environ.get("NEURONPEDIA_API_KEY")
     if not key:
-        print("[explanations] NEURONPEDIA_API_KEY not set, skip"); return
+        raise SystemExit("NEURONPEDIA_API_KEY required")
     EXPL_DIR.mkdir(parents=True, exist_ok=True)
     n_batches = (NP_N_FEATURES + NP_BATCH_SIZE - 1) // NP_BATCH_SIZE
     for b in range(n_batches):
@@ -147,15 +147,13 @@ def seed_submissions() -> None:
         row = cur.fetchone()
         if row:
             uid = row[0]
-            cur.execute("select 1 from submissions where user_id = %s limit 1", (uid,))
-            if cur.fetchone():
-                print(f"[seed] {SEED_USER} submissions exist, skip"); return
         else:
             uid = uuid.uuid4()
             cur.execute(
                 "insert into profiles (id, username, password_hash) values (%s, %s, %s)",
                 (str(uid), SEED_USER, argon2.hash(secrets.token_hex(32))),
             )
+        cur.execute("delete from submissions where user_id = %s", (str(uid),))
 
         rows = []
         for path in files:
