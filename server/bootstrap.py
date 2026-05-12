@@ -42,6 +42,7 @@ NP_EXPL_KEEP = ("description", "explanationModelName", "scoreV1", "scoreV2", "sc
 
 SEED_USER = "neuronpedia"
 SEED_CREATED_AT = "epoch"  # 1970-01-01 sentinel: row predates the game
+SEED_SCORE = 0.5  # policy floor; not a measured score (scorer_model_id stays NULL)
 LABEL_MAX = 1000
 
 
@@ -170,13 +171,13 @@ def seed_submissions() -> None:
                 label = (e.get("description") or "").strip()[:LABEL_MAX]
                 if not label:
                     continue
-                rows.append((str(uid), fid, label))
+                rows.append((str(uid), fid, label, SEED_SCORE))
         if not rows:
             print("[seed] no explanations found")
             return
         cur.executemany(
-            "insert into submissions (user_id, feature_id, label, created_at) "
-            f"values (%s, %s, %s, '{SEED_CREATED_AT}')", rows,
+            "insert into submissions (user_id, feature_id, label, score, created_at) "
+            f"values (%s, %s, %s, %s, '{SEED_CREATED_AT}')", rows,
         )
         print(f"[seed] inserted {len(rows)} submissions as {SEED_USER}")
 

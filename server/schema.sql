@@ -35,4 +35,4 @@ select distinct on (s.feature_id)
   s.created_at as found_at
 from submissions s
 join profiles p on p.id = s.user_id
-order by s.feature_id, s.score desc nulls last, s.created_at asc;
+order by s.feature_id, s.score desc nulls last, s.created_at asc, s.submission_id asc;

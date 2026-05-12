@@ -96,8 +96,8 @@ Two tables (`profiles`, `submissions`) + one view (`feature_best`). Canonical DD
 
 Notes:
 - Passwords are hashed with argon2id (`passlib[argon2]`) and stored on `profiles`; JWTs are issued and verified by the server itself.
-- `submissions.score` and `submissions.scorer_model_id` are `NULL` for seed rows (see §4) and non-null for real `/score` writes.
-- `feature_best` orders by `(score desc nulls last, created_at asc)`, so any real submission outranks seed rows and earliest wins ties.
+- Seed rows (see §4) carry `score=0.5` (policy floor — not a measured score) and `scorer_model_id=NULL`. Real `/score` writes carry a measured `score ∈ [0,1]` and a non-null `scorer_model_id`. The presence of `scorer_model_id` is the seed-vs-real discriminator.
+- `feature_best` orders by `(score desc nulls last, created_at asc, submission_id asc)`. With `seed.created_at = epoch`, a real submission must achieve `score > 0.5` to displace a seed; ties on `0.5` go to the seed. `submission_id` is the final tie-breaker (bigserial → unique → deterministic; resolves ties among multiple seeds for the same feature in Neuronpedia's `explanations[]` insertion order).
 
 ---
 
@@ -108,6 +108,6 @@ Notes:
 1. **`apply_schema`** — applies `server/schema.sql` to `DATABASE_URL` (creates `profiles`, `submissions`, view `feature_best`).
 2. **`fetch_features`** — for `i ∈ [0, 16384)`, calls `GET https://www.neuronpedia.org/api/feature/gemma-2-2b/20-gemmascope-res-16k/{i}` with 8 concurrent workers and 5 retries (exponential backoff). Trims each response to the per-feature schema from §1 (`index`, `explanations[…]`, `buckets[…]`, `neighbors[…]`) and writes `np-l20-res-16k/features/{i}.json.gz`. Resumable: existing files are skipped.
 3. **`build_umap_bin`** — downloads `google/gemma-scope-2b-pt-res :: layer_20/width_16k/average_l0_71/params.npz` from HuggingFace, loads `W_dec` `(16384, 2304)`, runs `umap.UMAP(metric="cosine")`, writes `web/umap.bin` as little-endian `Float32Array(16384, 2)` (~130 KB), overwriting any existing file. Deletes the downloaded `params.npz` (and its HuggingFace cache entry) once `web/umap.bin` is on disk — `W_dec` is not used at runtime. 
-4. **`seed_submissions`** — reads `np-l20-res-16k/features/{i}.json.gz`. Ensures a `neuronpedia` profile exists (creates one with a random argon2 password if absent). Deletes any prior submissions for that user, then for every explanation with a non-empty `description` inserts `(user_id=neuronpedia, feature_id, label=description.strip()[:1000], score=NULL, scorer_model_id=NULL, created_at='epoch')` into `submissions`. The `NULL` score combined with `score desc nulls last` in `feature_best` guarantees any real submission outranks the seed; `'epoch'` (1970-01-01) is a sentinel marking origin and is not load-bearing for ordering. Idempotent per `neuronpedia` user (prior seed rows are wiped on each run).
+4. **`seed_submissions`** — reads `np-l20-res-16k/features/{i}.json.gz`. Ensures a `neuronpedia` profile exists (creates one with a random argon2 password if absent). Deletes any prior submissions for that user, then for every explanation with a non-empty `description` inserts `(user_id=neuronpedia, feature_id, label=description.strip()[:1000], score=0.5, scorer_model_id=NULL, created_at='epoch')` into `submissions`. `score=0.5` is a policy floor (not a measured value); it forces real submissions to clear a non-trivial informedness bar before displacing the seed on `feature_best`. `'epoch'` (1970-01-01) is a sentinel marking origin and is not load-bearing for ordering. Idempotent per `neuronpedia` user (prior seed rows are wiped on each run).
 
 ---
