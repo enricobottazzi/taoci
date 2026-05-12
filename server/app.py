@@ -8,8 +8,8 @@ import jwt
 import psycopg
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException
-from fastapi.responses import FileResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi.staticfiles import StaticFiles
 from passlib.hash import argon2
 from pydantic import BaseModel, Field
 
@@ -25,17 +25,6 @@ WEB_DIR = os.path.join(os.path.dirname(__file__), "..", "web")
 
 app = FastAPI()
 bearer = HTTPBearer(auto_error=False)
-
-
-@app.get("/")
-@app.get("/index.html")
-def index() -> FileResponse:
-    return FileResponse(os.path.join(WEB_DIR, "index.html"))
-
-
-@app.get("/login.html")
-def login() -> FileResponse:
-    return FileResponse(os.path.join(WEB_DIR, "login.html"))
 
 
 def db():
@@ -89,3 +78,25 @@ def auth(body: AuthIn) -> dict:
                 raise HTTPException(401, "wrong password")
     return {"access_token": mint_token(uid, body.username),
             "user": {"id": str(uid), "username": body.username}}
+
+
+@app.get("/map")
+def map_data(_: dict = Depends(require_user)) -> dict:
+    with db() as conn, conn.cursor() as cur:
+        cur.execute("""
+            select username, count(*)::int, avg(score)::float
+            from feature_best group by username order by count(*) desc
+        """)
+        leaderboard = [{"username": u, "features_led": n, "avg_score": a}
+                       for u, n, a in cur.fetchall()]
+        cur.execute("""
+            select feature_id, username, label, score, found_at
+            from feature_best
+        """)
+        features = [{"id": fid, "user": u, "label": lbl,
+                     "score": float(s), "found_at": fa.date().isoformat()}
+                    for fid, u, lbl, s, fa in cur.fetchall()]
+    return {"leaderboard": leaderboard, "features": features}
+
+
+app.mount("/", StaticFiles(directory=WEB_DIR, html=True), name="web")

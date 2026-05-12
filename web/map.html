@@ -116,23 +116,6 @@
 </div>
 <div id="tip"></div>
 <script>
-const LEADERS = [
-  ["neo",       1287],
-  ["trinity",    934],
-  ["morpheus",   712],
-  ["cypher",     503],
-  ["tank",       418],
-  ["dozer",      297],
-  ["mouse",      188],
-  ["switch",     142],
-  ["apoc",        91],
-  ["smith",       37],
-];
-const rowsEl = document.getElementById("rows");
-rowsEl.innerHTML = LEADERS
-  .map(([n, s], i) => `<li data-i="${i}"><span class="r">${i + 1}</span><span class="n">${n}</span><span class="s">${s}</span></li>`)
-  .join("");
-
 function hash32(s) { let h = 2166136261 >>> 0;
   for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
   return h >>> 0; }
@@ -146,8 +129,22 @@ function mulberry32(a) { return () => {
 const PIXEL = 1, ARM = 1, MARGIN = 0.04, GRID = 3, MAX_LEVEL = 3;
 
 (async () => {
-  const buf = await (await fetch("umap.bin")).arrayBuffer();
+  const tok = localStorage.getItem("taoci.token");
+  if (!tok) { location.href = "login.html"; return; }
+  const [buf, data] = await Promise.all([
+    fetch("umap.bin").then(r => r.arrayBuffer()),
+    fetch("/map", { headers: { Authorization: "Bearer " + tok } }).then(r => {
+      if (r.status === 401) { location.href = "login.html"; throw new Error("unauth"); }
+      return r.json();
+    }),
+  ]);
   const pts = new Float32Array(buf);
+
+  const rowsEl = document.getElementById("rows");
+  rowsEl.innerHTML = data.leaderboard.slice(0, 10).map((l, i) =>
+    `<li data-i="${i}"><span class="r">${i + 1}</span><span class="n">${l.username}</span><span class="s">${l.features_led}</span></li>`
+  ).join("");
+  const feats = Object.fromEntries(data.features.map(f => [f.id, f]));
   let xMin = Infinity, yMin = Infinity, xMax = -Infinity, yMax = -Infinity;
   for (let i = 0; i < pts.length; i += 2) {
     const x = pts[i], y = pts[i + 1];
@@ -162,12 +159,9 @@ const PIXEL = 1, ARM = 1, MARGIN = 0.04, GRID = 3, MAX_LEVEL = 3;
   const lvlEl = document.getElementById("lvl");
   const tip = document.getElementById("tip");
 
-  const explain = i => `feature explanation placeholder`;
-  const discoverer = i => LEADERS[hash32("d" + i) % LEADERS.length][0];
-  const foundAt = i => {
-    const d = new Date(2024, 0, 1 + (hash32("t" + i) % 700));
-    return d.toISOString().slice(0, 10);
-  };
+  const explain = i => feats[i]?.label ?? "undiscovered";
+  const discoverer = i => feats[i]?.user ?? "—";
+  const foundAt = i => feats[i]?.found_at ?? "—";
 
   const detail = document.getElementById("detail");
   const dId = document.getElementById("d-id");
@@ -186,7 +180,7 @@ const PIXEL = 1, ARM = 1, MARGIN = 0.04, GRID = 3, MAX_LEVEL = 3;
     dLabel.textContent = explain(i);
     dDisc.textContent = discoverer(i);
     dDate.textContent = foundAt(i);
-    dScore.textContent = scores[i].toFixed(3);
+    dScore.textContent = feats[i] ? scores[i].toFixed(3) : "—";
   };
   const CATEGORIES = [
     "NEBULAE", "STAR FORGE", "VOID DRIFT", "PLASMA SEA", "QUASAR FIELD",
@@ -201,7 +195,7 @@ const PIXEL = 1, ARM = 1, MARGIN = 0.04, GRID = 3, MAX_LEVEL = 3;
 
   const N = pts.length / 2;
   const scores = new Float32Array(N);
-  for (let i = 0; i < N; i++) scores[i] = mulberry32(hash32("s" + i))();
+  for (let i = 0; i < N; i++) scores[i] = feats[i]?.score ?? 0;
   let sMin = 0, sMax = 1;
 
   const stack = [{ x0: xMin, y0: yMin, x1: xMax, y1: yMax }];
