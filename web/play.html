@@ -99,9 +99,10 @@ let id = null;
   pDate.textContent = b?.found_at ?? "—";
   pScore.textContent = b && Number.isFinite(b.score) ? b.score.toFixed(3) : "—";
 
-  fetch(`activations/${id}.json`).then(r => r.json()).then(raw => {
-    const seen = new Set();
-    const exs = raw.filter(e => { const k = e.tokens.join("\0"); return !seen.has(k) && seen.add(k); });
+  const exs = j.top_activations ?? [];
+  if (exs.length === 0) {
+    exEl.textContent = "no activations available";
+  } else {
     const mx = Math.max(...exs.map(e => e.max));
     exEl.classList.remove("empty");
     exEl.innerHTML = exs.map(e =>
@@ -111,7 +112,7 @@ let id = null;
         return `<span class="tk" style="background:rgba(255,165,0,${a})">${txt}</span>`;
       }).join("")}</div>`
     ).join("");
-  }).catch(() => { exEl.textContent = "no activations available"; });
+  }
 
   const expEl = document.getElementById("exp");
   const box = document.getElementById("submitBox");

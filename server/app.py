@@ -1,9 +1,13 @@
 """FastAPI app. Endpoints: see API.md."""
+import functools
+import gzip
+import json
 import os
 import re
 import secrets
 import time
 import uuid
+from pathlib import Path
 
 import jwt
 import psycopg
@@ -23,6 +27,8 @@ JWT_TTL = 7 * 24 * 3600
 
 USERNAME_RE = re.compile(r"^[A-Za-z0-9_-]{2,32}$")
 WEB_DIR = os.path.join(os.path.dirname(__file__), "..", "web")
+FEATURES_DIR = Path(__file__).resolve().parent.parent / "np-l20-res-16k" / "features"
+TOP_K = 5
 
 app = FastAPI()
 bearer = HTTPBearer(auto_error=False)
@@ -101,6 +107,23 @@ def map_data(_: dict = Depends(require_user)) -> dict:
     return {"leaderboard": leaderboard, "features": features}
 
 
+@functools.lru_cache(maxsize=2048)
+def top_activations(fid: int) -> list[dict]:
+    with gzip.open(FEATURES_DIR / f"{fid}.json.gz", "rt") as f:
+        rec = json.load(f)
+    top = next(b for b in rec["buckets"] if b["binContains"] == -1)
+    seen, out = set(), []
+    for e in top["examples"]:
+        key = "\0".join(e["tokens"])
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append({"tokens": e["tokens"], "values": e["values"], "max": e["max"]})
+        if len(out) == TOP_K:
+            break
+    return out
+
+
 @app.get("/play")
 def play(_: dict = Depends(require_user)) -> dict:
     fid = secrets.randbelow(1000)
@@ -116,7 +139,7 @@ def play(_: dict = Depends(require_user)) -> dict:
         best = {"user": u, "label": lbl,
                 "score": float(s) if s is not None else None,
                 "found_at": fa.date().isoformat()}
-    return {"id": fid, "best": best}
+    return {"id": fid, "top_activations": top_activations(fid), "best": best}
 
 
 app.mount("/", StaticFiles(directory=WEB_DIR, html=True), name="web")

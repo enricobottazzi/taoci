@@ -59,8 +59,20 @@ FastAPI. Holds `DATABASE_URL`, `JWT_SECRET`, `OPENROUTER_API_KEY` and `NEURONPED
 
 **Role**: the actual game move. User submits an explanation; server runs the LLM scorer and writes the result.
 
-**Request**: `{ feature_id, description }`
-**Response**: `{ submission_id, score, is_new_best }`
+**Request**: `{ feature_id, description }` (`description`: 1–1000 chars)
+**Response**: `{ submission_id, score, is_new_best }` (`score` ∈ [0, 1])
+
+**Scoring procedure** — delphi's `DetectionScorer` (== eleuther_recall):
+
+1. **Build evidence set** from `np-l20-res-16k/features/{feature_id}.json.gz`:
+   - `test`: first `N_TEST=20` examples of the top bucket (`binContains == -1`) — these *do* activate the feature.
+   - `not_active`: top-bucket examples of the feature's `neighbors[].idx` (highest cosine first, skipping self), pooled until `≥ 3·N_DISTRACTORS`, shuffled with `Random(42)`, truncated to `N_DISTRACTORS=20` — these are hard negatives that look semantically nearby but should *not* match the label.
+2. **Tokenize** each example's `tokens` with `unsloth/gemma-2-2b` (cached, loaded once) into a `delphi.latents` `ActivatingExample` / `NonActivatingExample`.
+3. **Score** with `DetectionScorer(client=OpenRouter("anthropic/claude-sonnet-4.5"), n_examples_shown=5)`: the LLM is shown groups of 5 examples + the user's `description` and must mark which ones activate.
+4. **Reduce** to balanced accuracy `0.5 · (TP/POS + TN/NEG)` over all parseable responses; this is `score`.
+5. **Persist** one row in `submissions` (`user_id`, `feature_id`, `label=description`, `score`, `scorer_model_id='anthropic/claude-sonnet-4.5'`, `created_at=now()`). `is_new_best = score > max(prior score for this feature_id)` (true if no prior real submission).
+
+Hard timeout 60 s on the scorer call → 504. Scorer returning zero parseable selections → 500.
 
 ---
 
