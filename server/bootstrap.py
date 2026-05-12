@@ -148,6 +148,7 @@ def seed_submissions() -> None:
         return
     with psycopg.connect(os.environ["DATABASE_URL"], autocommit=True) as conn, \
          conn.cursor() as cur:
+        cur.execute("set time zone 'UTC'")
         cur.execute("select id from profiles where username = %s", (SEED_USER,))
         row = cur.fetchone()
         if row:

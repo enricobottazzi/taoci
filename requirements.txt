@@ -5,7 +5,6 @@ pyjwt
 passlib[argon2]
 python-dotenv
 
-boto3
 numpy
 umap-learn
 huggingface_hub

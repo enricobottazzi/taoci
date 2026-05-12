@@ -9,6 +9,7 @@ import re
 import secrets
 import time
 import uuid
+from datetime import timezone
 from pathlib import Path
 
 import jwt
@@ -54,7 +55,9 @@ bearer = HTTPBearer(auto_error=False)
 
 
 def db():
-    return psycopg.connect(DATABASE_URL, autocommit=True)
+    conn = psycopg.connect(DATABASE_URL, autocommit=True)
+    conn.execute("set time zone 'UTC'")
+    return conn
 
 
 def mint_token(user_id: uuid.UUID, username: str) -> str:
@@ -121,7 +124,7 @@ def map_data(_: dict = Depends(require_user)) -> dict:
         """)
         features = [{"id": fid, "user": u, "label": lbl,
                      "score": float(s) if s is not None else None,
-                     "found_at": fa.date().isoformat()}
+                     "found_at": fa.astimezone(timezone.utc).date().isoformat()}
                     for fid, u, lbl, s, fa in cur.fetchall()]
     return {"leaderboard": leaderboard, "features": features}
 
@@ -206,7 +209,7 @@ def play(_: dict = Depends(require_user)) -> dict:
         u, lbl, s, fa = row
         best = {"user": u, "label": lbl,
                 "score": float(s) if s is not None else None,
-                "found_at": fa.date().isoformat()}
+                "found_at": fa.astimezone(timezone.utc).date().isoformat()}
     return {"id": fid, "top_activations": top_activations(fid), "best": best}
 
 
