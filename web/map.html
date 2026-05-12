@@ -394,9 +394,8 @@ const PIXEL = 1, ARM = 1, MARGIN = 0.04, GRID = 3, MAX_LEVEL = 3;
 
   const playBtn = document.getElementById("play");
   playBtn.addEventListener("click", () => {
-    const pick = (Math.random() * N) | 0;
     sessionStorage.setItem("taoci:mapState", JSON.stringify({ stack, sMin, sMax }));
-    location.href = `play.html?id=${pick}`;
+    location.href = "play.html";
   });
 
   refreshUI(); draw();
