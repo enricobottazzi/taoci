@@ -135,15 +135,16 @@ let id = null;
     try {
       const res = await fetch("/score", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ feature: id, description }),
+        headers: { "Content-Type": "application/json",
+                   Authorization: "Bearer " + tok },
+        body: JSON.stringify({ feature_id: id, description }),
       });
       const txt = await res.text();
       let j; try { j = JSON.parse(txt); }
-      catch { throw new Error(`/score returned non-JSON (HTTP ${res.status}). `
-        + `is scripts/serve.py running?`); }
-      if (!res.ok) throw new Error(j.error || res.statusText);
-      box.innerHTML = `<span class="score">${j.balanced_accuracy.toFixed(3)}</span>`;
+      catch { throw new Error(`/score returned non-JSON (HTTP ${res.status})`); }
+      if (!res.ok) throw new Error(j.detail || j.error || res.statusText);
+      box.innerHTML = `<span class="score">${j.score.toFixed(3)}</span>`
+        + (j.is_new_best ? `<span class="hint">NEW BEST</span>` : "");
     } catch (e) {
       box.classList.add("err");
       box.innerHTML = `<span class="hint">error: ${e.message}</span>`;
