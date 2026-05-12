@@ -40,13 +40,12 @@ pip install -r requirements.txt
 python -m server.bootstrap
 ```
 
-Idempotent. Does five things:
+Idempotent. Does four things:
 
 1. Applies `server/schema.sql` to `$DATABASE_URL` (creates `profiles`, `submissions`, `feature_best`).
-2. `aws s3 sync` the two BE folders from the Neuronpedia public bucket into `./np-l20-res-16k/` (~330 MB).
-3. Fetches `vectors.npy`, runs UMAP, writes `web/umap.bin` (`Float32Array(N, 2)`, ~130 KB).
-4. Pulls per-feature explanations + scores from the Neuronpedia API into `np-l20-res-16k/explanation-scores/batch-*.jsonl.gz`. Resumable per batch. 
-5. Seeds databse with `submissions` as user `neuronpedia`: one row per explanation that has an `eleuther_recall` score, value = max across LLM judges for that method.
+2. Pulls per-feature labels, activation buckets, and top-k cosine neighbors from the Neuronpedia API into `np-l20-res-16k/features/{idx}.json.gz` (16384 features, 8 concurrent workers). Resumable per file.
+3. Downloads `W_dec` from the Gemma Scope HF repo (`google/gemma-scope-2b-pt-res`, layer 20 / width 16k), runs UMAP, writes `web/umap.bin` (`Float32Array(N, 2)`, ~130 KB).
+4. Seeds the database with `submissions` as user `neuronpedia`
 
 ### 4. Run
 

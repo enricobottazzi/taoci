@@ -1,6 +1,6 @@
 """One-shot deploy prep. Idempotent.
 
-Reads `DATABASE_URL` from .env (or environment).
+Reads `DATABASE_URL` and `NEURONPEDIA_API_KEY` from .env (or environment).
 
     python -m server.bootstrap
 """
@@ -9,6 +9,7 @@ import json
 import os
 import secrets
 import sys
+import tempfile
 import time
 import urllib.error
 import urllib.request
@@ -16,11 +17,8 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
-import boto3
 import numpy as np
 import psycopg
-from botocore import UNSIGNED
-from botocore.config import Config
 from dotenv import load_dotenv
 from huggingface_hub import hf_hub_download
 from passlib.hash import argon2
@@ -29,11 +27,9 @@ load_dotenv()
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = ROOT / "np-l20-res-16k"
-EXPL_DIR = DATA_DIR / "explanation-scores"
+FEATURES_DIR = DATA_DIR / "features"
 UMAP_BIN = ROOT / "web" / "umap.bin"
 
-S3_BUCKET = "neuronpedia-datasets"
-S3_PREFIX = "v1/gemma-2-2b/20-gemmascope-res-16k"
 HF_REPO = "google/gemma-scope-2b-pt-res"
 HF_FILE = "layer_20/width_16k/average_l0_71/params.npz"
 
@@ -41,10 +37,8 @@ NP_MODEL = "gemma-2-2b"
 NP_LAYER = "20-gemmascope-res-16k"
 NP_API = "https://www.neuronpedia.org/api/feature/{m}/{l}/{i}"
 NP_N_FEATURES = 16384
-NP_BATCH_SIZE = 1024
 NP_CONCURRENCY = 8
-NP_KEEP = ("id", "description", "explanationModelName", "typeName",
-           "scoreV1", "scoreV2", "scores", "triggeredByUser")
+NP_EXPL_KEEP = ("description", "explanationModelName", "scoreV1", "scoreV2", "scores")
 
 SEED_USER = "neuronpedia"
 SEED_CREATED_AT = "epoch"  # 1970-01-01 sentinel: row predates the game
@@ -59,29 +53,32 @@ def apply_schema() -> None:
     print(f"[schema] applied to {url.rsplit('@', 1)[-1]}")
 
 
-def sync_dataset() -> None:
-    s3 = boto3.client("s3", config=Config(signature_version=UNSIGNED))
-    for folder in ("activations", "features"):
-        local = DATA_DIR / folder
-        local.mkdir(parents=True, exist_ok=True)
-        paginator = s3.get_paginator("list_objects_v2")
-        for page in paginator.paginate(Bucket=S3_BUCKET, Prefix=f"{S3_PREFIX}/{folder}/"):
-            for obj in page.get("Contents", []):
-                key = obj["Key"]
-                dst = local / Path(key).name
-                s3.download_file(S3_BUCKET, key, str(dst))
-                print(f"[sync] {key} -> {dst}")
-        print(f"[sync] {folder} OK ({sum(1 for _ in local.iterdir())} files)")
-
-
-def build_umap_bin(seed: int = 0) -> None:
-    import umap
-    path = hf_hub_download(repo_id=HF_REPO, filename=HF_FILE)
-    W = np.load(path)["W_dec"]
-    emb = umap.UMAP(metric="cosine", random_state=seed).fit_transform(W)
-    UMAP_BIN.parent.mkdir(parents=True, exist_ok=True)
-    UMAP_BIN.write_bytes(emb.astype("<f4").tobytes())
-    print(f"[umap] {emb.shape} -> {UMAP_BIN} ({UMAP_BIN.stat().st_size} B)")
+def _trim(raw: dict, idx: int) -> dict:
+    by_bin: dict[tuple, list] = {}
+    for a in raw.get("activations") or []:
+        k = (a.get("binMin"), a.get("binMax"), a.get("binContains"))
+        by_bin.setdefault(k, []).append({
+            "tokens": a.get("tokens"),
+            "values": a.get("values"),
+            "max": a.get("maxValue"),
+        })
+    buckets = [
+        {"binMin": k[0], "binMax": k[1], "binContains": k[2],
+         "count": len(v), "examples": v}
+        for k, v in by_bin.items()
+    ]
+    neighbors = [
+        {"idx": i, "cos": c}
+        for i, c in zip(raw.get("topkCosSimIndices") or [],
+                        raw.get("topkCosSimValues") or [])
+    ]
+    return {
+        "index": str(idx),
+        "explanations": [{k: e.get(k) for k in NP_EXPL_KEEP}
+                         for e in (raw.get("explanations") or [])],
+        "buckets": buckets,
+        "neighbors": neighbors,
+    }
 
 
 def _fetch_feature(idx: int, key: str, retries: int = 5) -> dict:
@@ -90,10 +87,7 @@ def _fetch_feature(idx: int, key: str, retries: int = 5) -> dict:
     for attempt in range(retries):
         try:
             with urllib.request.urlopen(req, timeout=60) as r:
-                n = json.loads(r.read())
-                return {"index": str(idx),
-                        "explanations": [{k: e.get(k) for k in NP_KEEP}
-                                         for e in (n.get("explanations") or [])]}
+                return _trim(json.loads(r.read()), idx)
         except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError) as e:
             if getattr(e, "code", None) in (400, 401, 403, 404) and attempt == 0:
                 raise
@@ -101,41 +95,57 @@ def _fetch_feature(idx: int, key: str, retries: int = 5) -> dict:
     raise RuntimeError(f"giving up on feature {idx}")
 
 
-def fetch_explanations() -> None:
+def fetch_features() -> None:
     key = os.environ.get("NEURONPEDIA_API_KEY")
     if not key:
         raise SystemExit("NEURONPEDIA_API_KEY required")
-    EXPL_DIR.mkdir(parents=True, exist_ok=True)
-    n_batches = (NP_N_FEATURES + NP_BATCH_SIZE - 1) // NP_BATCH_SIZE
-    for b in range(n_batches):
-        path = EXPL_DIR / f"batch-{b}.jsonl.gz"
-        if path.exists():
-            continue
-        rng = range(b * NP_BATCH_SIZE, min((b + 1) * NP_BATCH_SIZE, NP_N_FEATURES))
-        print(f"[explanations] batch {b + 1}/{n_batches}: fetching {len(rng)} features", flush=True)
-        rows: dict[int, dict] = {}
-        t0 = time.time()
-        with ThreadPoolExecutor(max_workers=NP_CONCURRENCY) as ex:
-            futs = {ex.submit(_fetch_feature, i, key): i for i in rng}
-            for f in as_completed(futs):
-                i = futs[f]
-                try:
-                    rows[i] = f.result()
-                except Exception as e:
-                    print(f"  feature {i}: {e}", file=sys.stderr, flush=True)
-        tmp = path.with_suffix(".tmp")
-        with gzip.open(tmp, "wt") as g:
-            for i in sorted(rows):
-                g.write(json.dumps(rows[i]) + "\n")
-        tmp.rename(path)
-        print(f"[explanations] wrote {path} ({len(rows)}/{len(rng)}, "
-              f"{time.time() - t0:.1f}s)", flush=True)
+    FEATURES_DIR.mkdir(parents=True, exist_ok=True)
+    todo = [i for i in range(NP_N_FEATURES)
+            if not (FEATURES_DIR / f"{i}.json.gz").exists()]
+    if not todo:
+        print(f"[features] all {NP_N_FEATURES} present")
+        return
+    print(f"[features] fetching {len(todo)}/{NP_N_FEATURES}", flush=True)
+    t0 = time.time()
+    n_ok = n_err = 0
+    with ThreadPoolExecutor(max_workers=NP_CONCURRENCY) as ex:
+        futs = {ex.submit(_fetch_feature, i, key): i for i in todo}
+        for f in as_completed(futs):
+            i = futs[f]
+            try:
+                rec = f.result()
+            except Exception as e:
+                print(f"  feature {i}: {e}", file=sys.stderr, flush=True)
+                n_err += 1
+                continue
+            path = FEATURES_DIR / f"{i}.json.gz"
+            tmp = path.with_suffix(".tmp")
+            with gzip.open(tmp, "wt") as g:
+                g.write(json.dumps(rec))
+            tmp.rename(path)
+            n_ok += 1
+            if n_ok % 200 == 0:
+                print(f"  {n_ok}/{len(todo)} ({time.time() - t0:.1f}s)", flush=True)
+    print(f"[features] done {n_ok} OK / {n_err} err ({time.time() - t0:.1f}s)")
+
+
+def build_umap_bin(seed: int = 0) -> None:
+    import umap
+    with tempfile.TemporaryDirectory() as td:
+        path = hf_hub_download(repo_id=HF_REPO, filename=HF_FILE, cache_dir=td)
+        with np.load(path) as npz:
+            W = npz["W_dec"].copy()
+    emb = umap.UMAP(metric="cosine", random_state=seed).fit_transform(W)
+    UMAP_BIN.parent.mkdir(parents=True, exist_ok=True)
+    UMAP_BIN.write_bytes(emb.astype("<f4").tobytes())
+    print(f"[umap] {emb.shape} -> {UMAP_BIN} ({UMAP_BIN.stat().st_size} B)")
 
 
 def seed_submissions() -> None:
-    files = sorted(EXPL_DIR.glob("batch-*.jsonl.gz"))
+    files = sorted(FEATURES_DIR.glob("*.json.gz"))
     if not files:
-        print(f"[seed] {EXPL_DIR} empty, skip"); return
+        print(f"[seed] {FEATURES_DIR} empty, skip")
+        return
     with psycopg.connect(os.environ["DATABASE_URL"], autocommit=True) as conn, \
          conn.cursor() as cur:
         cur.execute("select id from profiles where username = %s", (SEED_USER,))
@@ -153,16 +163,16 @@ def seed_submissions() -> None:
         rows = []
         for path in files:
             with gzip.open(path, "rt") as f:
-                for line in f:
-                    rec = json.loads(line)
-                    fid = int(rec["index"])
-                    for e in rec.get("explanations") or []:
-                        label = (e.get("description") or "").strip()[:LABEL_MAX]
-                        if not label:
-                            continue
-                        rows.append((str(uid), fid, label))
+                rec = json.loads(f.read())
+            fid = int(rec["index"])
+            for e in rec.get("explanations") or []:
+                label = (e.get("description") or "").strip()[:LABEL_MAX]
+                if not label:
+                    continue
+                rows.append((str(uid), fid, label))
         if not rows:
-            print(f"[seed] no explanations found"); return
+            print("[seed] no explanations found")
+            return
         cur.executemany(
             "insert into submissions (user_id, feature_id, label, created_at) "
             f"values (%s, %s, %s, '{SEED_CREATED_AT}')", rows,
@@ -172,7 +182,6 @@ def seed_submissions() -> None:
 
 if __name__ == "__main__":
     apply_schema()
-    sync_dataset()
+    fetch_features()
     build_umap_bin()
-    fetch_explanations()
     seed_submissions()

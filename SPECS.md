@@ -15,16 +15,7 @@
 
 ---
 
-## 1. Static data (read-only, immutable per release)
-
-| path | notes |
-| --- | --- |
-| `web/umap.bin` | `Float32Array(N, 2)` star positions for `/map` (only FE-fetched static asset) |
-| `np-l20-res-16k/features/{i}.json.gz` | per-feature dataset fetched from `GET https://www.neuronpedia.org/api/feature/gemma-2-2b/20-gemmascope-res-16k/{i}`, trimmed to: `index`, `explanations[].(description, explanationModelName, scoreV1, scoreV2, scores)`, `buckets[].(binMin, binMax, binContains, count, examples[].(tokens, values, max))`, `neighbors[].(idx, cos)` |
-
----
-
-## 2. Server API
+## 1. Server API
 
 FastAPI. Holds `DATABASE_URL`, `JWT_SECRET`, `OPENROUTER_API_KEY` and `NEURONPEDIA_API_KEY` Protected routes require `Authorization: Bearer <jwt>`; the server validates the JWT locally (HS256 over `JWT_SECRET`) and reads `sub` as the user id.
 
@@ -77,7 +68,17 @@ Errors are uniform: `{ "error": "<code>", "message": "<human>" }`. 401 (auth), 4
 
 ---
 
-## 3. Database (Postgres)
+## 2. Static data (read-only, immutable per release)
+
+| path | notes |
+| --- | --- |
+| `web/umap.bin` | `Float32Array(N, 2)` star positions for `/map` (only FE-fetched static asset) |
+| `np-l20-res-16k/features/{i}.json.gz` | per-feature dataset fetched from `GET https://www.neuronpedia.org/api/feature/gemma-2-2b/20-gemmascope-res-16k/{i}`, trimmed to: `index`, `explanations[].(description, explanationModelName, scoreV1, scoreV2, scores)`, `buckets[].(binMin, binMax, binContains, count, examples[].(tokens, values, max))`, `neighbors[].(idx, cos)` |
+
+---
+
+
+## 3. Dynamic data (Postgres DB)
 
 Two tables + one view. Passwords are hashed with argon2id (`passlib[argon2]`) and stored on `profiles`; JWTs are issued and verified by the server itself.
 
@@ -134,12 +135,5 @@ order by s.feature_id, s.score desc, s.created_at asc;  -- earliest tie-break
 2. **`fetch_features`** — for `i ∈ [0, 16384)`, calls `GET https://www.neuronpedia.org/api/feature/gemma-2-2b/20-gemmascope-res-16k/{i}` with 8 concurrent workers and 5 retries (exponential backoff). Trims each response to the per-feature schema from §1 (`index`, `explanations[…]`, `buckets[…]`, `neighbors[…]`) and writes `np-l20-res-16k/features/{i}.json.gz`. Resumable: existing files are skipped.
 3. **`build_umap_bin`** — downloads `google/gemma-scope-2b-pt-res :: layer_20/width_16k/average_l0_71/params.npz` from HuggingFace, loads `W_dec` `(16384, 2304)`, runs `umap.UMAP(metric="cosine")`, writes `web/umap.bin` as little-endian `Float32Array(16384, 2)` (~130 KB), overwriting any existing file. Deletes the downloaded `params.npz` (and its HuggingFace cache entry) once `web/umap.bin` is on disk — `W_dec` is not used at runtime. 
 4. **`seed_submissions`** — reads `np-l20-res-16k/features/{i}.json.gz`. Ensures a `neuronpedia` profile exists (creates one with a random argon2 password if absent). Deletes any prior submissions for that user, then for every explanation with a non-empty `description` inserts `(user_id=neuronpedia, feature_id, label=description[:1000], score=NULL, scorer_model_id=NULL, created_at='epoch')` into `submissions`. The `'epoch'` (1970-01-01) sentinel marks rows as predating the game so any real user submission outranks them via the `score desc, created_at asc` ordering of `feature_best`. Idempotent per `neuronpedia` user (prior seed rows are wiped on each run).
-
-| Step | Source | Destination | Consumer |
-| --- | --- | --- | --- |
-| 1 | `server/schema.sql` | Postgres | server |
-| 2 | Neuronpedia REST API | `np-l20-res-16k/features/{i}.json.gz` | server runtime (`/play`, `/score`), bootstrap step 4 |
-| 3 | HuggingFace `params.npz` (`W_dec`) | `web/umap.bin` | frontend (`/map`) |
-| 4 | `np-l20-res-16k/features/` | Postgres `submissions` (as `neuronpedia` user) | server runtime via `feature_best` |
 
 ---
