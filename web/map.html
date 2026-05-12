@@ -11,9 +11,18 @@
   canvas { display: block; width: 100%; height: 100%; image-rendering: pixelated; }
   #side { width: 264px; display: flex; flex-direction: column; gap: 12px;
           padding: 12px; box-sizing: border-box; height: 100vh; }
-  #board, #detail { border: 1px solid #fff;
+  #user, #board, #detail { border: 1px solid #fff;
                     padding: 12px 14px; box-sizing: border-box;
                     font-size: 12px; }
+  #user dl { margin: 0; display: grid; grid-template-columns: 9ch 1fr;
+             row-gap: 4px; column-gap: 8px; }
+  #user dt { opacity: 0.5; }
+  #user dd { margin: 0; min-width: 0; white-space: nowrap;
+             overflow: hidden; text-overflow: ellipsis; }
+  #logout { background: #000; color: #fff; border: 1px solid #fff;
+            font: inherit; padding: 10px; letter-spacing: 6px;
+            text-align: center; cursor: pointer; }
+  #logout:hover { background: #fff; color: #000; }
   #detail h2 { margin: 0 0 10px; font-size: 12px; font-weight: normal;
                letter-spacing: 1px; }
   #detail dl { margin: 0; display: grid;
@@ -99,6 +108,12 @@
     </div>
   </div>
   <aside id="side">
+    <div id="user">
+      <dl>
+        <dt>USER</dt><dd id="u-name">—</dd>
+        <dt>SCORE</dt><dd id="u-score">—</dd>
+      </dl>
+    </div>
     <div id="board">
       <h2>== LEADERBOARD ==</h2>
       <ol id="rows"></ol>
@@ -113,6 +128,7 @@
         <dt>SCORE</dt><dd id="d-score">—</dd>
       </dl>
     </div>
+    <button id="logout" type="button">LOGOUT</button>
   </aside>
 </div>
 <div id="tip"></div>
@@ -132,6 +148,13 @@ const PIXEL = 1, ARM = 1, MARGIN = 0.04, GRID = 3, MAX_LEVEL = 3;
 (async () => {
   const tok = localStorage.getItem("taoci.token");
   if (!tok) { location.href = "login.html"; return; }
+  const me = JSON.parse(localStorage.getItem("taoci.user") || "{}");
+  document.getElementById("u-name").textContent = me.username ?? "—";
+  document.getElementById("logout").addEventListener("click", () => {
+    localStorage.removeItem("taoci.token");
+    localStorage.removeItem("taoci.user");
+    location.href = "login.html";
+  });
   const [buf, data] = await Promise.all([
     fetch("umap.bin").then(r => r.arrayBuffer()),
     fetch("/map", { headers: { Authorization: "Bearer " + tok } }).then(r => {
@@ -145,6 +168,8 @@ const PIXEL = 1, ARM = 1, MARGIN = 0.04, GRID = 3, MAX_LEVEL = 3;
   rowsEl.innerHTML = data.leaderboard.slice(0, 10).map((l, i) =>
     `<li data-i="${i}"><span class="r">${i + 1}</span><span class="n">${l.username}</span><span class="s">${l.features_led}</span></li>`
   ).join("");
+  const mine = data.leaderboard.find(l => l.username === me.username);
+  document.getElementById("u-score").textContent = mine?.features_led ?? 0;
   const feats = Object.fromEntries(data.features.map(f => [f.id, f]));
   let xMin = Infinity, yMin = Infinity, xMax = -Infinity, yMax = -Infinity;
   for (let i = 0; i < pts.length; i += 2) {
