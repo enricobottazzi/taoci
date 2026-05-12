@@ -4,16 +4,21 @@
 <meta charset="utf-8" />
 <title>The Atlas Of Concept Islands</title>
 <style>
-  html, body { margin: 0; min-height: 100%; background: #000; color: #fff;
-               font-family: ui-monospace, Menlo, monospace; }
+  :root { --c: #fff; --cr: 255,255,255; }
+  body.win  { --c: #5f5; --cr: 85,255,85; }
+  body.lose { --c: #f55; --cr: 255,85,85; }
+  html, body { margin: 0; min-height: 100%; background: #000; color: var(--c);
+               font-family: ui-monospace, Menlo, monospace;
+               transition: color 200ms ease; }
   #wrap { max-width: 880px; margin: 0 auto; padding: 24px;
           display: flex; flex-direction: column; gap: 16px; }
   #bar { display: flex; align-items: center; gap: 12px; }
-  #bar a { color: #fff; text-decoration: none; border: 1px solid #fff;
+  #bar a { color: var(--c); text-decoration: none; border: 1px solid var(--c);
            padding: 6px 12px; letter-spacing: 2px; font-size: 12px; }
-  #bar a:hover { background: #fff; color: #000; }
+  #bar a:hover { background: var(--c); color: #000; }
   h1 { margin: 0; font-size: 14px; font-weight: normal; letter-spacing: 4px; }
-  #card { border: 1px solid #fff; padding: 16px 18px; font-size: 13px; }
+  #card { border: 1px solid var(--c); padding: 16px 18px; font-size: 13px;
+          transition: border-color 200ms ease; }
   dl { margin: 0; display: grid; grid-template-columns: 10ch 1fr;
        row-gap: 6px; column-gap: 12px; }
   dt { opacity: 0.5; }
@@ -23,20 +28,20 @@
   .count { opacity: 0.5; font-size: 11px; letter-spacing: 1px; }
   #submitRow { display: flex; align-items: center; gap: 12px; margin-top: 8px; }
   #examples { display: flex; flex-direction: column; gap: 10px; }
-  .ex { border: 1px solid rgba(255,255,255,0.25); padding: 8px 10px;
+  .ex { border: 1px solid rgba(var(--cr),0.25); padding: 8px 10px;
         font-size: 13px; line-height: 1.7; white-space: pre-wrap;
         word-break: break-word; }
   .tk { padding: 0 1px; }
   .empty { opacity: 0.5; }
-  textarea { width: 100%; box-sizing: border-box; background: #000; color: #fff;
-             border: 1px solid rgba(255,255,255,0.25); font: inherit;
+  textarea { width: 100%; box-sizing: border-box; background: #000; color: var(--c);
+             border: 1px solid rgba(var(--cr),0.25); font: inherit;
              padding: 8px; outline: none; min-height: 64px; resize: vertical; }
-  textarea::placeholder { color: rgba(255,255,255,0.4); }
-  textarea:focus { background: #fff; color: #000; }
+  textarea::placeholder { color: rgba(var(--cr),0.4); }
+  textarea:focus { background: var(--c); color: #000; }
   textarea:focus::placeholder { color: rgba(0,0,0,0.4); }
-  button { background: #000; color: #fff; border: 1px solid #fff; font: inherit;
+  button { background: #000; color: var(--c); border: 1px solid var(--c); font: inherit;
            padding: 8px 18px; letter-spacing: 4px; cursor: pointer; }
-  button:hover:not(:disabled) { background: #fff; color: #000; }
+  button:hover:not(:disabled) { background: var(--c); color: #000; }
   button:disabled { opacity: 0.4; cursor: not-allowed; }
   #submitBox { font-size: 13px; display: inline-flex; align-items: center; gap: 10px; }
   #submitBox .hint { opacity: 0.5; font-size: 11px; letter-spacing: 1px; }
@@ -122,6 +127,7 @@ let id = null;
   btn.addEventListener("click", async () => {
     const description = expEl.value.trim();
     box.classList.remove("err");
+    document.body.classList.remove("win", "lose");
     if (!description) {
       box.innerHTML = `<span class="hint">enter an explanation first.</span>`;
       return;
@@ -143,6 +149,14 @@ let id = null;
       let j; try { j = JSON.parse(txt); }
       catch { throw new Error(`/score returned non-JSON (HTTP ${res.status})`); }
       if (!res.ok) throw new Error(j.detail || j.error || res.statusText);
+      document.body.classList.add(j.is_new_best ? "win" : "lose");
+      if (j.is_new_best) {
+        const me = JSON.parse(localStorage.getItem("taoci.user") || "{}");
+        pLabel.textContent = description;
+        pDisc.textContent = me.username ?? "—";
+        pDate.textContent = new Date().toISOString().slice(0, 10);
+        pScore.textContent = j.score.toFixed(3);
+      }
       box.innerHTML = `<span class="score">${j.score.toFixed(3)}</span>`
         + (j.is_new_best ? `<span class="hint">NEW BEST</span>` : "");
     } catch (e) {

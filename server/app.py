@@ -184,7 +184,7 @@ async def score_explanation(fid: int, description: str) -> dict:
     scorer = DetectionScorer(
         client=OpenRouter(SCORER_MODEL, api_key=OPENROUTER_API_KEY),
         n_examples_shown=N_SHOWN, verbose=False)
-    outs = (await scorer(record)).score or []
+    outs = [o for o in ((await scorer(record)).score or []) if o.correct is not None]
     if not outs:
         raise HTTPException(500, "scorer returned no parseable selections")
     pos = sum(o.activating for o in outs)
@@ -192,7 +192,7 @@ async def score_explanation(fid: int, description: str) -> dict:
     tp = sum(o.correct for o in outs if o.activating)
     tn = sum(o.correct for o in outs if not o.activating)
     bal = 0.5 * (tp / max(pos, 1) + tn / max(neg, 1))
-    return {"score": bal, "scorer_model_id": SCORER_MODEL}
+    return {"score": max(0.0, 2 * bal - 1), "scorer_model_id": SCORER_MODEL}
 
 
 @app.get("/play")
