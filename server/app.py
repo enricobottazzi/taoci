@@ -42,7 +42,7 @@ FEATURES_DIR = Path(__file__).resolve().parent.parent / "np-l20-res-16k" / "feat
 TOP_K = 5
 N_FEATURES = 1000  # TODO: raise to 16384 once full Neuronpedia dump is fetched (see bootstrap.NP_N_FEATURES)
 
-SCORER_MODEL = "anthropic/claude-sonnet-4.5"
+SCORER_MODEL = "anthropic/claude-haiku-4.5"
 SCORER_MODULE = "blocks.20.hook_resid_post"
 SCORER_TOKENIZER = "unsloth/gemma-2-2b"
 N_TEST = 20
