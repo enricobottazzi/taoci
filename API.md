@@ -50,7 +50,7 @@ FastAPI. Holds `DATABASE_URL`, `JWT_SECRET`, `OPENROUTER_API_KEY`. Protected rou
 **Response**:
 ```json
 {
-  "leaderboard": [{ "username": "neo", "features_led": 1287, "avg_score": 0.71 }],
+  "leaderboard": [{ "username": "neo", "features_led": 1287 }],
   "features": [{ "id": 877, "user": "neo", "label": "references to municipal recycling", "score": 0.84, "found_at": "2025-03-12" }]
 }
 ```
@@ -137,7 +137,7 @@ Endpoint → query map:
 | `POST /auth` | `select id, password_hash from profiles where username=$1`; verify argon2id, else `insert into profiles ...`. Issue HS256 JWT with `sub=id`. |
 | `GET /play` | random `feature_id` → `select * from feature_best where feature_id = $1`. |
 | `GET /map` features | `select feature_id, username, label, score, found_at from feature_best`. |
-| `GET /map` leaderboard | `select username, count(*) features_led, avg(score) avg_score from feature_best group by username order by features_led desc`. |
+| `GET /map` leaderboard | `select username, count(*) features_led from feature_best group by username order by features_led desc`. |
 | `POST /score` | `insert into submissions ...`; `is_new_best` = `not exists (select 1 from submissions where feature_id=$1 and submission_id<>$new and score>=$score)`. |
 
 ---

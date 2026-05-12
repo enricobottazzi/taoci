@@ -84,11 +84,11 @@ def auth(body: AuthIn) -> dict:
 def map_data(_: dict = Depends(require_user)) -> dict:
     with db() as conn, conn.cursor() as cur:
         cur.execute("""
-            select username, count(*)::int, avg(score)::float
+            select username, count(*)::int
             from feature_best group by username order by count(*) desc
         """)
-        leaderboard = [{"username": u, "features_led": n, "avg_score": a}
-                       for u, n, a in cur.fetchall()]
+        leaderboard = [{"username": u, "features_led": n}
+                       for u, n in cur.fetchall()]
         cur.execute("""
             select feature_id, username, label, score, found_at
             from feature_best
