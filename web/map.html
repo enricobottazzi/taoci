@@ -11,9 +11,17 @@
   canvas { display: block; width: 100%; height: 100%; image-rendering: pixelated; }
   #side { width: 264px; display: flex; flex-direction: column; gap: 12px;
           padding: 12px; box-sizing: border-box; height: 100vh; }
-  #user, #board, #detail { border: 1px solid #fff;
+  #user, #board, #search, #detail { border: 1px solid #fff;
                     padding: 12px 14px; box-sizing: border-box;
                     font-size: 12px; }
+  #search h2 { margin: 0 0 10px; font-size: 12px; font-weight: normal;
+               letter-spacing: 1px; }
+  #search input { width: 100%; box-sizing: border-box; background: #000;
+               color: #fff; border: 1px solid rgba(255,255,255,0.35);
+               font: inherit; padding: 6px 8px; outline: none; }
+  #search input::placeholder { color: rgba(255,255,255,0.4); }
+  #search input:focus { border-color: #fff; }
+  #search input.err { border-color: #f55; color: #f55; }
   #user dl { margin: 0; display: grid; grid-template-columns: 9ch 1fr;
              row-gap: 4px; column-gap: 8px; }
   #user dt { opacity: 0.5; }
@@ -117,6 +125,11 @@
     <div id="board">
       <h2>== LEADERBOARD ==</h2>
       <ol id="rows"></ol>
+    </div>
+    <div id="search">
+      <h2>== SEARCH ==</h2>
+      <input id="q" type="text" inputmode="numeric" autocomplete="off"
+             placeholder="find a feature by id" />
     </div>
     <div id="detail" class="empty">
       <h2>== FEATURE ==</h2>
@@ -418,6 +431,18 @@ const PIXEL = 1, ARM = 1, MARGIN = 0.04, GRID = 3, MAX_LEVEL = 3;
     } catch {}
     sessionStorage.removeItem("taoci:mapState");
   }
+
+  const qEl = document.getElementById("q");
+  qEl.addEventListener("input", () => {
+    const s = qEl.value.trim();
+    if (!s) { qEl.classList.remove("err"); target = -1; setDetail(-1); draw(); return; }
+    const i = Number(s);
+    const ok = Number.isInteger(i) && i >= 0 && i < N;
+    qEl.classList.toggle("err", !ok);
+    target = ok ? i : -1;
+    setDetail(target);
+    draw();
+  });
 
   const playBtn = document.getElementById("play");
   playBtn.addEventListener("click", () => {

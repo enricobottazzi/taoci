@@ -40,7 +40,7 @@ USERNAME_RE = re.compile(r"^[A-Za-z0-9_-]{2,32}$")
 WEB_DIR = os.path.join(os.path.dirname(__file__), "..", "web")
 FEATURES_DIR = Path(__file__).resolve().parent.parent / "np-l20-res-16k" / "features"
 TOP_K = 5
-N_FEATURES = 1000  # TODO: raise to 16384 once full Neuronpedia dump is fetched (see bootstrap.NP_N_FEATURES)
+N_FEATURES = 16384 
 
 SCORER_MODEL = "anthropic/claude-haiku-4.5"
 SCORER_MODULE = "blocks.20.hook_resid_post"
