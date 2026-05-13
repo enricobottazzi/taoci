@@ -28,7 +28,8 @@ load_dotenv()
 ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = ROOT / "np-l20-res-16k"
 FEATURES_DIR = DATA_DIR / "features"
-UMAP_BIN = ROOT / "web" / "umap.bin"
+UMAP_BIN = DATA_DIR / "umap.bin"
+UMAP_LINK = ROOT / "web" / "umap.bin"
 
 HF_REPO = "google/gemma-scope-2b-pt-res"
 HF_FILE = "layer_20/width_16k/average_l0_71/params.npz"
@@ -131,15 +132,22 @@ def fetch_features() -> None:
 
 
 def build_umap_bin(seed: int = 0) -> None:
-    import umap
-    with tempfile.TemporaryDirectory() as td:
-        path = hf_hub_download(repo_id=HF_REPO, filename=HF_FILE, cache_dir=td)
-        with np.load(path) as npz:
-            W = npz["W_dec"].copy()
-    emb = umap.UMAP(metric="cosine", random_state=seed).fit_transform(W)
-    UMAP_BIN.parent.mkdir(parents=True, exist_ok=True)
-    UMAP_BIN.write_bytes(emb.astype("<f4").tobytes())
-    print(f"[umap] {emb.shape} -> {UMAP_BIN} ({UMAP_BIN.stat().st_size} B)")
+    if not UMAP_BIN.exists():
+        import umap
+        with tempfile.TemporaryDirectory() as td:
+            path = hf_hub_download(repo_id=HF_REPO, filename=HF_FILE, cache_dir=td)
+            with np.load(path) as npz:
+                W = npz["W_dec"].copy()
+        emb = umap.UMAP(metric="cosine", random_state=seed).fit_transform(W)
+        UMAP_BIN.parent.mkdir(parents=True, exist_ok=True)
+        UMAP_BIN.write_bytes(emb.astype("<f4").tobytes())
+        print(f"[umap] {emb.shape} -> {UMAP_BIN} ({UMAP_BIN.stat().st_size} B)")
+    else:
+        print(f"[umap] {UMAP_BIN} present, skip")
+    UMAP_LINK.parent.mkdir(parents=True, exist_ok=True)
+    UMAP_LINK.unlink(missing_ok=True)
+    UMAP_LINK.symlink_to(UMAP_BIN)
+    print(f"[umap] linked {UMAP_LINK} -> {UMAP_BIN}")
 
 
 def seed_submissions() -> None:
@@ -154,13 +162,16 @@ def seed_submissions() -> None:
         row = cur.fetchone()
         if row:
             uid = row[0]
+            cur.execute("select 1 from submissions where user_id = %s limit 1", (str(uid),))
+            if cur.fetchone():
+                print(f"[seed] {SEED_USER} already seeded, skip")
+                return
         else:
             uid = uuid.uuid4()
             cur.execute(
                 "insert into profiles (id, username, password_hash) values (%s, %s, %s)",
                 (str(uid), SEED_USER, argon2.hash(secrets.token_hex(32))),
             )
-        cur.execute("delete from submissions where user_id = %s", (str(uid),))
 
         rows = []
         for path in files:

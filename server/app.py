@@ -292,4 +292,4 @@ async def score(body: ScoreIn, u: dict = Depends(require_user)) -> dict:
             "is_new_best": prev is None or r["score"] > prev}
 
 
-app.mount("/", StaticFiles(directory=WEB_DIR, html=True), name="web")
+app.mount("/", StaticFiles(directory=WEB_DIR, html=True, follow_symlink=True), name="web")
