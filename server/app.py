@@ -2,6 +2,7 @@
 import asyncio
 import functools
 import gzip
+import itertools
 import json
 import logging
 import os
@@ -40,9 +41,8 @@ TOP_K = 5
 N_FEATURES = 16384 
 
 SCORER_MODEL = "anthropic/claude-haiku-4.5"
-N_NEIGHBORS = 5
-K_ITER = 5
 N_SHOWN = 5
+MIN_VALIDATED = 25
 SCORE_TIMEOUT_S = 60
 
 logger = logging.getLogger("taoci.score")
@@ -194,30 +194,39 @@ async def score_explanation(fid: int, description: str) -> dict:
     logger.info("Positives P (%d):\n%s", len(P),
                 "\n".join(f"  [{i}] {_preview(e)}" for i, e in enumerate(P)))
 
-    neighbors = [n for n in _feature(fid)["neighbors"]
-                 if n["idx"] != fid and n["idx"] < N_FEATURES][:N_NEIGHBORS]
-    D: list[tuple[int, dict]] = []
-    for n in neighbors:
-        exs = top_activations(n["idx"])
-        logger.info("Neighbor %d (cos=%s) -> %d examples:\n%s",
-                    n["idx"], n.get("cos"), len(exs),
-                    "\n".join(f"  [{i}] {_preview(e)}" for i, e in enumerate(exs)))
-        D.extend((n["idx"], e) for e in exs)
-    random.Random(42).shuffle(D)
-    subpools = [D[i * N_SHOWN:(i + 1) * N_SHOWN] for i in range(K_ITER)]
+    rng = random.Random(42)
 
+    def distractor_stream():
+        for n in _feature(fid)["neighbors"]:
+            if n["idx"] == fid or n["idx"] >= N_FEATURES:
+                continue
+            exs = top_activations(n["idx"])
+            logger.info("Neighbor %d (cos=%s) -> %d examples:\n%s",
+                        n["idx"], n.get("cos"), len(exs),
+                        "\n".join(f"  [{i}] {_preview(e)}" for i, e in enumerate(exs)))
+            items = [(n["idx"], e) for e in exs]
+            rng.shuffle(items)
+            yield from items
+
+    distractors = distractor_stream()
     client = _LoggingOpenRouter(SCORER_MODEL, api_key=OPENROUTER_API_KEY, temperature=0)
     TP = TN = POS = NEG = 0
     bal_log: list[float | None] = []
-    for i, sub in enumerate(subpools):
+    i = 0
+    while POS < MIN_VALIDATED or NEG < MIN_VALIDATED:
+        sub = list(itertools.islice(distractors, N_SHOWN))
+        if len(sub) < N_SHOWN:
+            logger.warning("[iter %d] neighbor pool exhausted", i)
+            break
         items = ([(e, True, "P") for e in P]
                  + [(e, False, f"N{nidx}") for nidx, e in sub])
         random.Random(42 + i).shuffle(items)
         logger.info("=== iter %d ===", i)
         calls = [items[:N_SHOWN], items[N_SHOWN:]]
         preds = [await _classify_batch(client, description, c) for c in calls]
+        i += 1
         if any(all(p is None for p in ps) for ps in preds):
-            logger.warning("[iter %d] dropped (parse failure)", i)
+            logger.warning("[iter %d] dropped (parse failure)", i - 1)
             bal_log.append(None)
             continue
         tp_i = tn_i = vpos = vneg = 0
@@ -233,9 +242,9 @@ async def score_explanation(fid: int, description: str) -> dict:
         bal_i = 0.5 * (tp_i / max(vpos, 1) + tn_i / max(vneg, 1))
         bal_log.append(bal_i)
         logger.info("[iter %d] tp=%d/%d tn=%d/%d bal=%.3f",
-                    i, tp_i, vpos, tn_i, vneg, bal_i)
+                    i - 1, tp_i, vpos, tn_i, vneg, bal_i)
 
-    if POS < 25 or NEG < 25:
+    if POS < MIN_VALIDATED or NEG < MIN_VALIDATED:
         raise HTTPException(500, f"too few parseable selections (POS={POS} NEG={NEG})")
     bal = 0.5 * (TP / POS + TN / NEG)
     score = max(0.0, 2 * bal - 1)
