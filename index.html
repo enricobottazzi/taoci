@@ -4,23 +4,23 @@
 <meta charset="utf-8" />
 <title>The Atlas Of Unanchored Features</title>
 <style>
-  html, body { margin: 0; height: 100%; background: #000; overflow: hidden;
-               font-family: ui-monospace, Menlo, monospace; color: #fff; }
+  html, body { margin: 0; height: 100%; background: #fff; overflow: hidden;
+               font-family: ui-monospace, Menlo, monospace; color: #000; }
   #app { display: flex; align-items: flex-start; height: 100vh; }
   #map { flex: 1; position: relative; min-width: 0; height: 100vh; }
   canvas { display: block; width: 100%; height: 100%; image-rendering: pixelated; }
   #side { width: 264px; display: flex; flex-direction: column; gap: 12px;
           padding: 12px; box-sizing: border-box; height: 100vh; }
-  #search, #detail, #synset { border: 1px solid #fff;
+  #search, #detail, #synset { border: 1px solid #000;
                     padding: 12px 14px; box-sizing: border-box;
                     font-size: 12px; }
   #search h2, #detail h2, #synset h2 { margin: 0 0 10px; font-size: 12px;
                font-weight: normal; letter-spacing: 1px; }
-  #search input { width: 100%; box-sizing: border-box; background: #000;
-               color: #fff; border: 1px solid rgba(255,255,255,0.35);
+  #search input { width: 100%; box-sizing: border-box; background: #fff;
+               color: #000; border: 1px solid rgba(0,0,0,0.35);
                font: inherit; padding: 6px 8px; outline: none; }
-  #search input::placeholder { color: rgba(255,255,255,0.4); }
-  #search input:focus { border-color: #fff; }
+  #search input::placeholder { color: rgba(0,0,0,0.4); }
+  #search input:focus { border-color: #000; }
   #search input.err { border-color: #f55; color: #f55; }
   #detail dl, #synset dl { margin: 0; display: grid;
                grid-template-columns: 9ch 1fr; row-gap: 4px; column-gap: 8px; }
@@ -28,20 +28,20 @@
   #detail dd, #synset dd { margin: 0; min-width: 0; white-space: nowrap;
                overflow: hidden; text-overflow: ellipsis; }
   #detail dd#d-label, #synset dd#s-gloss { white-space: normal; word-break: break-word;
-               max-height: 8em; overflow-y: auto; }
+               height: 8em; overflow-y: auto; }
   #detail.empty dd, #synset.empty dd { opacity: 0.35; }
   #ui { position: fixed; top: 12px; left: 12px; display: flex;
         flex-direction: column; gap: 8px; align-items: flex-start;
         user-select: none; }
   #zoomBar { display: flex; gap: 6px; align-items: center; }
   #scoreBar { display: flex; gap: 8px; align-items: center; font-size: 12px;
-              border: 1px solid #fff; padding: 6px 10px; }
+              border: 1px solid #000; padding: 6px 10px; }
   #scoreBar .v { opacity: 0.8; min-width: 4ch; text-align: right; }
   .rangeWrap { position: relative; width: 160px; height: 14px; }
   .rangeWrap .track { position: absolute; top: 50%; left: 0; right: 0;
-              height: 1px; background: rgba(255,255,255,0.35); }
+              height: 1px; background: rgba(0,0,0,0.35); }
   .rangeWrap .fill  { position: absolute; top: 50%; height: 1px;
-              background: #fff; }
+              background: #000; }
   .rangeWrap input[type=range] { position: absolute; inset: 0; width: 100%;
               -webkit-appearance: none; appearance: none; background: none;
               margin: 0; pointer-events: none; }
@@ -50,22 +50,22 @@
   .rangeWrap input[type=range]::-moz-range-track {
               height: 14px; background: transparent; }
   .rangeWrap input[type=range]::-webkit-slider-thumb { -webkit-appearance: none;
-              appearance: none; width: 8px; height: 12px; background: #fff;
+              appearance: none; width: 8px; height: 12px; background: #000;
               border: none; margin-top: 1px; pointer-events: auto;
               cursor: ew-resize; }
   .rangeWrap input[type=range]::-moz-range-thumb {
-              width: 8px; height: 12px; background: #fff; border: none;
+              width: 8px; height: 12px; background: #000; border: none;
               border-radius: 0; pointer-events: auto; cursor: ew-resize; }
-  #ui button { background: #000; color: #fff; border: 1px solid #fff;
+  #ui button { background: #fff; color: #000; border: 1px solid #000;
                font: inherit; padding: 4px 10px; cursor: pointer; }
-  #ui button:hover:not(:disabled) { background: #fff; color: #000; }
+  #ui button:hover:not(:disabled) { background: #000; color: #fff; }
   #ui button:disabled { opacity: 0.35; cursor: not-allowed; }
   #help { align-self: stretch; padding: 10px; letter-spacing: 6px;
           text-align: center; text-decoration: none; }
   #ui { max-height: calc(100vh - 24px); }
   #lvl { padding: 0 4px; font-size: 12px; opacity: 0.7; }
-  #tip { position: fixed; pointer-events: none; background: #000;
-         border: 1px solid #fff; padding: 3px 6px; font-size: 12px;
+  #tip { position: fixed; pointer-events: none; background: #fff;
+         border: 1px solid #000; padding: 3px 6px; font-size: 12px;
          white-space: nowrap; display: none; }
 </style>
 </head>
@@ -200,7 +200,7 @@ const PIXEL = 1, ARM = 1, MARGIN = 0.04, GRID = 3, MAX_LEVEL = 3;
     const H = Math.floor(rect.height * dpr);
     cvs.width = W; cvs.height = H;
     ctx.imageSmoothingEnabled = false;
-    ctx.fillStyle = "#000"; ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, W, H);
 
     const { scale, ox, oy } = project(W, H);
     const v = view();
@@ -214,13 +214,13 @@ const PIXEL = 1, ARM = 1, MARGIN = 0.04, GRID = 3, MAX_LEVEL = 3;
       const x = pts[2 * k], y = pts[2 * k + 1];
       return x >= v.x0 && x <= v.x1 && y >= v.y0 && y <= v.y1;
     };
-    ctx.fillStyle = target >= 0 ? "#444" : "#fff";
+    ctx.fillStyle = target >= 0 ? "#bbb" : "#000";
     for (let k = 0; k < N; k++) {
       if (k === target || !inRange(k) || !inView(k)) continue;
       drawStar((pts[2 * k] * scale + ox) | 0, (pts[2 * k + 1] * scale + oy) | 0);
     }
     if (target >= 0 && inRange(target) && inView(target)) {
-      ctx.fillStyle = "#fff";
+      ctx.fillStyle = "#000";
       const px = (pts[2 * target] * scale + ox) | 0;
       const py = (pts[2 * target + 1] * scale + oy) | 0;
       const a2 = a + 2, l2 = 2 * a2 + t;
@@ -231,8 +231,8 @@ const PIXEL = 1, ARM = 1, MARGIN = 0.04, GRID = 3, MAX_LEVEL = 3;
       ctx.lineWidth = dpr;
       for (let i = 0; i < GRID * GRID; i++) {
         const r = cellRect(i, W, H);
-        ctx.strokeStyle = i === hover ? "#fff" : "rgba(255,255,255,0.35)";
-        if (i === hover) { ctx.fillStyle = "rgba(255,255,255,0.08)"; ctx.fillRect(r.x, r.y, r.w, r.h); }
+        ctx.strokeStyle = i === hover ? "#000" : "rgba(0,0,0,0.35)";
+        if (i === hover) { ctx.fillStyle = "rgba(0,0,0,0.08)"; ctx.fillRect(r.x, r.y, r.w, r.h); }
         ctx.strokeRect(r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
       }
     }
