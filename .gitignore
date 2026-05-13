@@ -179,3 +179,11 @@ cython_debug/
 #  refer to https://docs.cursor.com/context/ignore-files
 .cursorignore
 .cursorindexingignore
+
+# Datasets
+np-l20-res-16k/
+
+# Local dev
+docker-compose.yml
+GUIDE.md
+tmp/

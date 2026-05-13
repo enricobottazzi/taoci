@@ -1,0 +1,457 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>The Atlas Of Concept Islands</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden;
+               font-family: ui-monospace, Menlo, monospace; color: #fff; }
+  #app { display: flex; align-items: flex-start; height: 100vh; }
+  #map { flex: 1; position: relative; min-width: 0; height: 100vh; }
+  canvas { display: block; width: 100%; height: 100%; image-rendering: pixelated; }
+  #side { width: 264px; display: flex; flex-direction: column; gap: 12px;
+          padding: 12px; box-sizing: border-box; height: 100vh; }
+  #user, #board, #search, #detail { border: 1px solid #fff;
+                    padding: 12px 14px; box-sizing: border-box;
+                    font-size: 12px; }
+  #search h2 { margin: 0 0 10px; font-size: 12px; font-weight: normal;
+               letter-spacing: 1px; }
+  #search input { width: 100%; box-sizing: border-box; background: #000;
+               color: #fff; border: 1px solid rgba(255,255,255,0.35);
+               font: inherit; padding: 6px 8px; outline: none; }
+  #search input::placeholder { color: rgba(255,255,255,0.4); }
+  #search input:focus { border-color: #fff; }
+  #search input.err { border-color: #f55; color: #f55; }
+  #user dl { margin: 0; display: grid; grid-template-columns: 9ch 1fr;
+             row-gap: 4px; column-gap: 8px; }
+  #user dt { opacity: 0.5; }
+  #user dd { margin: 0; min-width: 0; white-space: nowrap;
+             overflow: hidden; text-overflow: ellipsis; }
+  #logout { background: #000; color: #fff; border: 1px solid #fff;
+            font: inherit; padding: 10px; letter-spacing: 6px;
+            text-align: center; cursor: pointer; }
+  #logout:hover { background: #fff; color: #000; }
+  #detail h2 { margin: 0 0 10px; font-size: 12px; font-weight: normal;
+               letter-spacing: 1px; }
+  #detail dl { margin: 0; display: grid;
+               grid-template-columns: 9ch 1fr; row-gap: 4px; column-gap: 8px; }
+  #detail dt { opacity: 0.5; }
+  #detail dd { margin: 0; min-width: 0; white-space: nowrap;
+               overflow: hidden; text-overflow: ellipsis; }
+  #detail dd#d-label { white-space: normal; word-break: break-word;
+               height: 8em; overflow-y: auto; }
+  #detail.empty dd { opacity: 0.35; }
+  #board h2 { margin: 0 0 10px; font-size: 12px; font-weight: normal;
+              letter-spacing: 1px; }
+  #board ol { list-style: none; margin: 0; padding: 0; }
+  #board li { display: grid; grid-template-columns: 2ch 1fr auto; gap: 8px;
+              padding: 2px 0; }
+  #board li .r { opacity: 0.5; text-align: right; }
+  #board li .n { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #board li .s { opacity: 0.8; }
+  #board li:nth-child(1) .r, #board li:nth-child(1) .s { opacity: 1; }
+  #ui { position: fixed; top: 12px; left: 12px; display: flex;
+        flex-direction: column; gap: 8px; align-items: flex-start;
+        user-select: none; }
+  #zoomBar { display: flex; gap: 6px; align-items: center; }
+  #scoreBar { display: flex; gap: 8px; align-items: center; font-size: 12px;
+              border: 1px solid #fff; padding: 6px 10px; }
+  #scoreBar .v { opacity: 0.8; min-width: 4ch; text-align: right; }
+  .rangeWrap { position: relative; width: 160px; height: 14px; }
+  .rangeWrap .track { position: absolute; top: 50%; left: 0; right: 0;
+              height: 1px; background: rgba(255,255,255,0.35); }
+  .rangeWrap .fill  { position: absolute; top: 50%; height: 1px;
+              background: #fff; }
+  .rangeWrap input[type=range] { position: absolute; inset: 0; width: 100%;
+              -webkit-appearance: none; appearance: none; background: none;
+              margin: 0; pointer-events: none; }
+  .rangeWrap input[type=range]::-webkit-slider-runnable-track {
+              height: 14px; background: transparent; }
+  .rangeWrap input[type=range]::-moz-range-track {
+              height: 14px; background: transparent; }
+  .rangeWrap input[type=range]::-webkit-slider-thumb { -webkit-appearance: none;
+              appearance: none; width: 8px; height: 12px; background: #fff;
+              border: none; margin-top: 1px; pointer-events: auto;
+              cursor: ew-resize; }
+  .rangeWrap input[type=range]::-moz-range-thumb {
+              width: 8px; height: 12px; background: #fff; border: none;
+              border-radius: 0; pointer-events: auto; cursor: ew-resize; }
+  #ui button { background: #000; color: #fff; border: 1px solid #fff;
+               font: inherit; padding: 4px 10px; cursor: pointer; }
+  #ui button:hover:not(:disabled) { background: #fff; color: #000; }
+  #ui button:disabled { opacity: 0.35; cursor: not-allowed; }
+  #play, #help { align-self: stretch; padding: 10px; letter-spacing: 6px;
+          text-align: center; text-decoration: none; }
+  #ui { max-height: calc(100vh - 24px); }
+  #lvl { padding: 0 4px; font-size: 12px; opacity: 0.7; }
+  #tip { position: fixed; pointer-events: none; background: #000;
+         border: 1px solid #fff; padding: 3px 6px; font-size: 12px;
+         white-space: nowrap; display: none; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="map">
+    <canvas id="c"></canvas>
+    <div id="ui">
+      <div id="zoomBar">
+        <button id="zin">+</button>
+        <button id="zout">&minus;</button>
+        <span id="lvl">L0</span>
+      </div>
+      <div id="scoreBar">
+        <span>score</span>
+        <span class="v" id="smin-v">0.00</span>
+        <div class="rangeWrap">
+          <div class="track"></div>
+          <div class="fill" id="fill"></div>
+          <input type="range" id="smin" min="0" max="1" step="0.01" value="0">
+          <input type="range" id="smax" min="0" max="1" step="0.01" value="1">
+        </div>
+        <span class="v" id="smax-v">1.00</span>
+      </div>
+      <button id="play" type="button">PLAY</button>
+      <button id="help" type="button"
+        onclick="window.open('https://leku.ink','_blank','noopener')">HELP</button>
+    </div>
+  </div>
+  <aside id="side">
+    <div id="user">
+      <dl>
+        <dt>USER</dt><dd id="u-name">—</dd>
+        <dt>SCORE</dt><dd id="u-score">—</dd>
+      </dl>
+    </div>
+    <div id="board">
+      <h2>== LEADERBOARD ==</h2>
+      <ol id="rows"></ol>
+    </div>
+    <div id="search">
+      <h2>== SEARCH ==</h2>
+      <input id="q" type="text" inputmode="numeric" autocomplete="off"
+             placeholder="find a feature by id" />
+    </div>
+    <div id="detail" class="empty">
+      <h2>== FEATURE ==</h2>
+      <dl>
+        <dt>ID</dt><dd id="d-id">—</dd>
+        <dt>LABEL</dt><dd id="d-label">—</dd>
+        <dt>FOUND BY</dt><dd id="d-disc">—</dd>
+        <dt>FOUND AT</dt><dd id="d-date">—</dd>
+        <dt>SCORE</dt><dd id="d-score">—</dd>
+      </dl>
+    </div>
+    <button id="logout" type="button">LOGOUT</button>
+  </aside>
+</div>
+<div id="tip"></div>
+<script>
+function hash32(s) { let h = 2166136261 >>> 0;
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return h >>> 0; }
+function mulberry32(a) { return () => {
+  a = (a + 0x6D2B79F5) >>> 0; let t = a;
+  t = Math.imul(t ^ (t >>> 15), t | 1);
+  t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+</script>
+<script>
+const PIXEL = 1, ARM = 1, MARGIN = 0.04, GRID = 3, MAX_LEVEL = 3;
+
+(async () => {
+  const tok = localStorage.getItem("taoci.token");
+  if (!tok) { location.href = "login.html"; return; }
+  const me = JSON.parse(localStorage.getItem("taoci.user") || "{}");
+  document.getElementById("u-name").textContent = me.username ?? "—";
+  document.getElementById("logout").addEventListener("click", () => {
+    localStorage.removeItem("taoci.token");
+    localStorage.removeItem("taoci.user");
+    location.href = "login.html";
+  });
+  const [buf, data] = await Promise.all([
+    fetch("umap.bin").then(r => r.arrayBuffer()),
+    fetch("/map", { headers: { Authorization: "Bearer " + tok } }).then(r => {
+      if (r.status === 401) { location.href = "login.html"; throw new Error("unauth"); }
+      return r.json();
+    }),
+  ]);
+  const pts = new Float32Array(buf);
+
+  const rowsEl = document.getElementById("rows");
+  rowsEl.innerHTML = data.leaderboard.slice(0, 10).map((l, i) =>
+    `<li data-i="${i}"><span class="r">${i + 1}</span><span class="n">${l.username}</span><span class="s">${l.features_led}</span></li>`
+  ).join("");
+  const mine = data.leaderboard.find(l => l.username === me.username);
+  document.getElementById("u-score").textContent = mine?.features_led ?? 0;
+  const feats = Object.fromEntries(data.features.map(f => [f.id, f]));
+  let xMin = Infinity, yMin = Infinity, xMax = -Infinity, yMax = -Infinity;
+  for (let i = 0; i < pts.length; i += 2) {
+    const x = pts[i], y = pts[i + 1];
+    if (x < xMin) xMin = x; if (x > xMax) xMax = x;
+    if (y < yMin) yMin = y; if (y > yMax) yMax = y;
+  }
+
+  const cvs = document.getElementById("c");
+  const ctx = cvs.getContext("2d");
+  const zinBtn = document.getElementById("zin");
+  const zoutBtn = document.getElementById("zout");
+  const lvlEl = document.getElementById("lvl");
+  const tip = document.getElementById("tip");
+
+  const explain = i => feats[i]?.label ?? "undiscovered";
+  const discoverer = i => feats[i]?.user ?? "—";
+  const foundAt = i => feats[i]?.found_at ?? "—";
+
+  const detail = document.getElementById("detail");
+  const dId = document.getElementById("d-id");
+  const dLabel = document.getElementById("d-label");
+  const dDisc = document.getElementById("d-disc");
+  const dDate = document.getElementById("d-date");
+  const dScore = document.getElementById("d-score");
+  const setDetail = i => {
+    if (i < 0) {
+      detail.classList.add("empty");
+      dId.textContent = dLabel.textContent = dDisc.textContent = dDate.textContent = dScore.textContent = "—";
+      return;
+    }
+    detail.classList.remove("empty");
+    dId.textContent = `#${i}`;
+    dLabel.textContent = explain(i);
+    dDisc.textContent = discoverer(i);
+    dDate.textContent = foundAt(i);
+    dScore.textContent = feats[i] && Number.isFinite(scores[i]) ? scores[i].toFixed(3) : "—";
+  };
+  const CATEGORIES = [
+    "NEBULAE", "STAR FORGE", "VOID DRIFT", "PLASMA SEA", "QUASAR FIELD",
+    "DARK MATTER", "PULSAR BELT", "COMET TRAIL", "WORMHOLE", "ION STORM",
+    "BLACK HOLE", "SUPERNOVA", "ASTEROID FLD", "GALAXY ARM", "MAGNETAR",
+  ];
+  const cellLabel = idx => {
+    const v = view();
+    const key = `${stack.length}:${idx}:${v.x0.toFixed(3)},${v.y0.toFixed(3)}`;
+    return CATEGORIES[hash32(key) % CATEGORIES.length];
+  };
+
+  const N = pts.length / 2;
+  const scores = new Float32Array(N);
+  for (let i = 0; i < N; i++) scores[i] = feats[i]?.score ?? NaN;
+  let sMin = 0, sMax = 1;
+
+  const stack = [{ x0: xMin, y0: yMin, x1: xMax, y1: yMax }];
+  let picking = false, hover = -1, target = -1;
+
+  const view = () => stack[stack.length - 1];
+
+  function project(W, H) {
+    const v = view();
+    const dx = v.x1 - v.x0, dy = v.y1 - v.y0;
+    const span = Math.max(dx, dy);
+    const side = Math.min(W, H) * (1 - 2 * MARGIN);
+    const scale = side / span;
+    const ox = (W - dx * scale) / 2 - v.x0 * scale;
+    const oy = (H - dy * scale) / 2 - v.y0 * scale;
+    return { scale, ox, oy };
+  }
+
+  function cellRect(idx, W, H) {
+    const { scale, ox, oy } = project(W, H);
+    const v = view();
+    const cx = idx % GRID, cy = (idx / GRID) | 0;
+    const w = (v.x1 - v.x0) / GRID, h = (v.y1 - v.y0) / GRID;
+    const x = (v.x0 + cx * w) * scale + ox;
+    const y = (v.y0 + cy * h) * scale + oy;
+    return { x, y, w: w * scale, h: h * scale };
+  }
+
+  function draw() {
+    const dpr = window.devicePixelRatio || 1;
+    const rect = cvs.getBoundingClientRect();
+    const W = Math.floor(rect.width * dpr);
+    const H = Math.floor(rect.height * dpr);
+    cvs.width = W; cvs.height = H;
+    ctx.imageSmoothingEnabled = false;
+    ctx.fillStyle = "#000"; ctx.fillRect(0, 0, W, H);
+
+    const { scale, ox, oy } = project(W, H);
+    const v = view();
+    const t = PIXEL, a = ARM * GRID ** (stack.length - 1), len = 2 * a + t;
+    const drawStar = (px, py) => {
+      ctx.fillRect(px - a, py, len, t);
+      ctx.fillRect(px, py - a, t, len);
+    };
+    const inRange = k => !Number.isFinite(scores[k]) || (scores[k] >= sMin && scores[k] <= sMax);
+    const inView = k => {
+      const x = pts[2 * k], y = pts[2 * k + 1];
+      return x >= v.x0 && x <= v.x1 && y >= v.y0 && y <= v.y1;
+    };
+    ctx.fillStyle = target >= 0 ? "#444" : "#fff";
+    for (let k = 0; k < N; k++) {
+      if (k === target || !inRange(k) || !inView(k)) continue;
+      drawStar((pts[2 * k] * scale + ox) | 0, (pts[2 * k + 1] * scale + oy) | 0);
+    }
+    if (target >= 0 && inRange(target) && inView(target)) {
+      ctx.fillStyle = "#fff";
+      const px = (pts[2 * target] * scale + ox) | 0;
+      const py = (pts[2 * target + 1] * scale + oy) | 0;
+      const a2 = a + 2, l2 = 2 * a2 + t;
+      ctx.fillRect(px - a2, py, l2, t);
+      ctx.fillRect(px, py - a2, t, l2);
+    }
+    if (picking) {
+      ctx.lineWidth = dpr;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.font = `${12 * dpr}px ui-monospace, Menlo, monospace`;
+      for (let i = 0; i < GRID * GRID; i++) {
+        const r = cellRect(i, W, H);
+        ctx.strokeStyle = i === hover ? "#fff" : "rgba(255,255,255,0.35)";
+        if (i === hover) { ctx.fillStyle = "rgba(255,255,255,0.08)"; ctx.fillRect(r.x, r.y, r.w, r.h); }
+        ctx.strokeRect(r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
+        const label = cellLabel(i);
+        const cx = r.x + r.w / 2, cy = r.y + r.h / 2;
+        const tw = ctx.measureText(label).width;
+        const pad = 6 * dpr, h = 18 * dpr;
+        ctx.fillStyle = "#000";
+        ctx.fillRect(cx - tw / 2 - pad, cy - h / 2, tw + 2 * pad, h);
+        ctx.strokeStyle = "#fff";
+        ctx.strokeRect(cx - tw / 2 - pad + 0.5, cy - h / 2 + 0.5, tw + 2 * pad - 1, h - 1);
+        ctx.fillStyle = "#fff";
+        ctx.fillText(label, cx, cy);
+      }
+    }
+  }
+
+  function refreshUI() {
+    lvlEl.textContent = "L" + (stack.length - 1);
+    zoutBtn.disabled = stack.length <= 1;
+    zinBtn.disabled = stack.length > MAX_LEVEL && !picking;
+    zinBtn.textContent = picking ? "x" : "+";
+  }
+
+  function hitTest(ev) {
+    const dpr = window.devicePixelRatio || 1;
+    const r = cvs.getBoundingClientRect();
+    const px = (ev.clientX - r.left) * dpr, py = (ev.clientY - r.top) * dpr;
+    for (let i = 0; i < GRID * GRID; i++) {
+      const r = cellRect(i, cvs.width, cvs.height);
+      if (px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h) return i;
+    }
+    return -1;
+  }
+
+  zinBtn.addEventListener("click", () => {
+    if (!picking && stack.length > MAX_LEVEL) return;
+    picking = !picking; hover = -1; refreshUI(); draw();
+  });
+  zoutBtn.addEventListener("click", () => {
+    if (stack.length > 1) { stack.pop(); picking = false; refreshUI(); draw(); }
+  });
+  window.addEventListener("keydown", e => {
+    if (e.key === "Escape" && picking) { picking = false; refreshUI(); draw(); }
+  });
+  function nearestStar(ev) {
+    const dpr = window.devicePixelRatio || 1;
+    const r = cvs.getBoundingClientRect();
+    const mx = (ev.clientX - r.left) * dpr, my = (ev.clientY - r.top) * dpr;
+    const { scale, ox, oy } = project(cvs.width, cvs.height);
+    const v = view();
+    const a = ARM * GRID ** (stack.length - 1);
+    const r2max = (a + 4) ** 2;
+    let best = -1, bestD = r2max;
+    for (let k = 0; k < N; k++) {
+      if (Number.isFinite(scores[k]) && (scores[k] < sMin || scores[k] > sMax)) continue;
+      const x = pts[2 * k], y = pts[2 * k + 1];
+      if (x < v.x0 || x > v.x1 || y < v.y0 || y > v.y1) continue;
+      const dx = x * scale + ox - mx, dy = y * scale + oy - my;
+      const d = dx * dx + dy * dy;
+      if (d < bestD) { bestD = d; best = k; }
+    }
+    return best;
+  }
+
+  cvs.addEventListener("mousemove", e => {
+    if (picking) {
+      const h = hitTest(e);
+      if (h !== hover) { hover = h; draw(); }
+      tip.style.display = "none";
+      return;
+    }
+    const idx = nearestStar(e);
+    setDetail(idx);
+    if (idx < 0) { tip.style.display = "none"; return; }
+    tip.textContent = `#${idx} ${explain(idx)}`;
+    tip.style.left = (e.clientX + 12) + "px";
+    tip.style.top  = (e.clientY + 12) + "px";
+    tip.style.display = "block";
+  });
+  cvs.addEventListener("mouseleave", () => { tip.style.display = "none"; setDetail(-1); });
+  cvs.addEventListener("click", e => {
+    if (!picking) return;
+    const i = hitTest(e);
+    if (i < 0) return;
+    const v = view();
+    const cx = i % GRID, cy = (i / GRID) | 0;
+    const w = (v.x1 - v.x0) / GRID, h = (v.y1 - v.y0) / GRID;
+    stack.push({ x0: v.x0 + cx * w, y0: v.y0 + cy * h,
+                 x1: v.x0 + (cx + 1) * w, y1: v.y0 + (cy + 1) * h });
+    picking = false; hover = -1; refreshUI(); draw();
+  });
+  window.addEventListener("resize", draw);
+
+  const sminEl = document.getElementById("smin");
+  const smaxEl = document.getElementById("smax");
+  const sminV = document.getElementById("smin-v");
+  const smaxV = document.getElementById("smax-v");
+  const fillEl = document.getElementById("fill");
+  const onScore = e => {
+    let lo = +sminEl.value, hi = +smaxEl.value;
+    if (lo > hi) {
+      if (e && e.target === sminEl) { lo = hi; sminEl.value = lo; }
+      else { hi = lo; smaxEl.value = hi; }
+    }
+    sMin = lo; sMax = hi;
+    sminV.textContent = sMin.toFixed(2);
+    smaxV.textContent = sMax.toFixed(2);
+    fillEl.style.left  = (sMin * 100) + "%";
+    fillEl.style.right = ((1 - sMax) * 100) + "%";
+    draw();
+  };
+  sminEl.addEventListener("input", onScore);
+  smaxEl.addEventListener("input", onScore);
+  onScore();
+
+  const saved = sessionStorage.getItem("taoci:mapState");
+  if (saved) {
+    try {
+      const s = JSON.parse(saved);
+      if (Array.isArray(s.stack) && s.stack.length) stack.splice(0, stack.length, ...s.stack);
+      if (typeof s.sMin === "number") { sMin = s.sMin; sminEl.value = s.sMin; }
+      if (typeof s.sMax === "number") { sMax = s.sMax; smaxEl.value = s.sMax; }
+      onScore();
+    } catch {}
+    sessionStorage.removeItem("taoci:mapState");
+  }
+
+  const qEl = document.getElementById("q");
+  qEl.addEventListener("input", () => {
+    const s = qEl.value.trim();
+    if (!s) { qEl.classList.remove("err"); target = -1; setDetail(-1); draw(); return; }
+    const i = Number(s);
+    const ok = Number.isInteger(i) && i >= 0 && i < N;
+    qEl.classList.toggle("err", !ok);
+    target = ok ? i : -1;
+    setDetail(target);
+    draw();
+  });
+
+  const playBtn = document.getElementById("play");
+  playBtn.addEventListener("click", () => {
+    sessionStorage.setItem("taoci:mapState", JSON.stringify({ stack, sMin, sMax }));
+    location.href = "play.html";
+  });
+
+  refreshUI(); draw();
+})();
+</script>
+</body>
+</html>

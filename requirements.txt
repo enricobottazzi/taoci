@@ -1,0 +1,22 @@
+fastapi
+uvicorn[standard]
+psycopg[binary]
+pyjwt
+passlib[argon2]
+python-dotenv
+
+numpy
+umap-learn
+huggingface_hub
+
+torch
+transformers
+
+# eai-delphi runtime deps (delphi itself is installed --no-deps in Dockerfile
+# to skip its vllm + CUDA optional pulls that bust Fly's 8 GB rootfs).
+httpx
+orjson
+blobfile
+jaxtyping
+pandas
+plotly
