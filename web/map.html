@@ -221,17 +221,6 @@ const PIXEL = 1, ARM = 1, MARGIN = 0.04, GRID = 3, MAX_LEVEL = 3;
     dDate.textContent = foundAt(i);
     dScore.textContent = feats[i] && Number.isFinite(scores[i]) ? scores[i].toFixed(3) : "—";
   };
-  const CATEGORIES = [
-    "NEBULAE", "STAR FORGE", "VOID DRIFT", "PLASMA SEA", "QUASAR FIELD",
-    "DARK MATTER", "PULSAR BELT", "COMET TRAIL", "WORMHOLE", "ION STORM",
-    "BLACK HOLE", "SUPERNOVA", "ASTEROID FLD", "GALAXY ARM", "MAGNETAR",
-  ];
-  const cellLabel = idx => {
-    const v = view();
-    const key = `${stack.length}:${idx}:${v.x0.toFixed(3)},${v.y0.toFixed(3)}`;
-    return CATEGORIES[hash32(key) % CATEGORIES.length];
-  };
-
   const N = pts.length / 2;
   const scores = new Float32Array(N);
   for (let i = 0; i < N; i++) scores[i] = feats[i]?.score ?? NaN;
@@ -299,24 +288,11 @@ const PIXEL = 1, ARM = 1, MARGIN = 0.04, GRID = 3, MAX_LEVEL = 3;
     }
     if (picking) {
       ctx.lineWidth = dpr;
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.font = `${12 * dpr}px ui-monospace, Menlo, monospace`;
       for (let i = 0; i < GRID * GRID; i++) {
         const r = cellRect(i, W, H);
         ctx.strokeStyle = i === hover ? "#fff" : "rgba(255,255,255,0.35)";
         if (i === hover) { ctx.fillStyle = "rgba(255,255,255,0.08)"; ctx.fillRect(r.x, r.y, r.w, r.h); }
         ctx.strokeRect(r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
-        const label = cellLabel(i);
-        const cx = r.x + r.w / 2, cy = r.y + r.h / 2;
-        const tw = ctx.measureText(label).width;
-        const pad = 6 * dpr, h = 18 * dpr;
-        ctx.fillStyle = "#000";
-        ctx.fillRect(cx - tw / 2 - pad, cy - h / 2, tw + 2 * pad, h);
-        ctx.strokeStyle = "#fff";
-        ctx.strokeRect(cx - tw / 2 - pad + 0.5, cy - h / 2 + 0.5, tw + 2 * pad - 1, h - 1);
-        ctx.fillStyle = "#fff";
-        ctx.fillText(label, cx, cy);
       }
     }
   }
