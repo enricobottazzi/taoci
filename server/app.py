@@ -3,6 +3,7 @@ import asyncio
 import functools
 import gzip
 import json
+import logging
 import os
 import random
 import re
@@ -14,7 +15,6 @@ from pathlib import Path
 
 import jwt
 import psycopg
-import torch
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -23,10 +23,7 @@ from passlib.hash import argon2
 from pydantic import BaseModel, Field
 
 from delphi.clients import OpenRouter
-from delphi.latents import (ActivatingExample, Latent, LatentRecord,
-                            NonActivatingExample)
-from delphi.scorers.classifier.detection import DetectionScorer
-from transformers import AutoTokenizer
+from delphi.scorers.classifier.prompts.detection_prompt import prompt as detection_prompt
 
 load_dotenv()
 
@@ -43,12 +40,18 @@ TOP_K = 5
 N_FEATURES = 16384 
 
 SCORER_MODEL = "anthropic/claude-haiku-4.5"
-SCORER_MODULE = "blocks.20.hook_resid_post"
-SCORER_TOKENIZER = "unsloth/gemma-2-2b"
-N_TEST = 20
-N_DISTRACTORS = 20
+N_NEIGHBORS = 5
+K_ITER = 5
 N_SHOWN = 5
 SCORE_TIMEOUT_S = 60
+
+logger = logging.getLogger("taoci.score")
+if not logger.handlers:
+    _h = logging.StreamHandler()
+    _h.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s"))
+    logger.addHandler(_h)
+    logger.setLevel(logging.INFO)
+    logger.propagate = False
 
 app = FastAPI()
 bearer = HTTPBearer(auto_error=False)
@@ -153,46 +156,93 @@ def top_activations(fid: int) -> list[dict]:
     return out
 
 
-@functools.lru_cache(maxsize=1)
-def _tokenizer():
-    return AutoTokenizer.from_pretrained(SCORER_TOKENIZER)
+def _preview(e: dict, n: int = 200) -> str:
+    return "".join(e["tokens"])[:n].replace("\n", "\\n")
 
 
-def _to_example(e: dict, cls):
-    tok = _tokenizer()
-    return cls(tokens=torch.tensor(tok.convert_tokens_to_ids(e["tokens"])),
-               activations=torch.tensor(e["values"]),
-               str_tokens=e["tokens"])
+class _LoggingOpenRouter(OpenRouter):
+    async def generate(self, prompt, **kw):
+        logger.info("[LLM prompt]\n%s", json.dumps(prompt, ensure_ascii=False, indent=2))
+        r = await super().generate(prompt, **kw)
+        logger.info("[LLM response] %s", r.text if r else None)
+        return r
+
+
+async def _classify_batch(client, explanation: str,
+                          batch: list[tuple[dict, bool, str]]) -> list[bool | None]:
+    """One LLM call over a 5-example batch. All-or-nothing parse."""
+    examples_str = "\n".join(f"Example {i}: {''.join(e['tokens'])}"
+                             for i, (e, _, _) in enumerate(batch))
+    logger.info("[Batch truth] %s",
+                [("ACT" if a else f"DIS({o})") for _, a, o in batch])
+    resp = await client.generate(detection_prompt(examples=examples_str,
+                                                  explanation=explanation))
+    text = resp.text if resp else ""
+    m = re.search(r"\[.*?\]", text)
+    if not m:
+        return [None] * len(batch)
+    try:
+        raw = json.loads(m.group(0))
+    except Exception:
+        return [None] * len(batch)
+    return [bool(x) for x in raw] if len(raw) == len(batch) else [None] * len(batch)
 
 
 async def score_explanation(fid: int, description: str) -> dict:
-    test = [_to_example(e, ActivatingExample)
-            for e in _top_examples(fid)[:N_TEST]]
-    pool: list[dict] = []
-    for n in _feature(fid)["neighbors"]:
-        if n["idx"] == fid or n["idx"] >= N_FEATURES:
-            continue
-        pool.extend(_top_examples(n["idx"]))
-        if len(pool) >= N_DISTRACTORS * 3:
-            break
-    random.Random(42).shuffle(pool)
-    not_active = [_to_example(e, NonActivatingExample)
-                  for e in pool[:N_DISTRACTORS]]
+    logger.info("=== Scoring feature %d | description=%r ===", fid, description)
+    P = top_activations(fid)
+    logger.info("Positives P (%d):\n%s", len(P),
+                "\n".join(f"  [{i}] {_preview(e)}" for i, e in enumerate(P)))
 
-    record = LatentRecord(latent=Latent(SCORER_MODULE, fid), test=test,
-                          not_active=not_active, explanation=description)
-    scorer = DetectionScorer(
-        client=OpenRouter(SCORER_MODEL, api_key=OPENROUTER_API_KEY),
-        n_examples_shown=N_SHOWN, verbose=False)
-    outs = [o for o in ((await scorer(record)).score or []) if o.correct is not None]
-    if not outs:
-        raise HTTPException(500, "scorer returned no parseable selections")
-    pos = sum(o.activating for o in outs)
-    neg = len(outs) - pos
-    tp = sum(o.correct for o in outs if o.activating)
-    tn = sum(o.correct for o in outs if not o.activating)
-    bal = 0.5 * (tp / max(pos, 1) + tn / max(neg, 1))
-    return {"score": max(0.0, 2 * bal - 1), "scorer_model_id": SCORER_MODEL}
+    neighbors = [n for n in _feature(fid)["neighbors"]
+                 if n["idx"] != fid and n["idx"] < N_FEATURES][:N_NEIGHBORS]
+    D: list[tuple[int, dict]] = []
+    for n in neighbors:
+        exs = top_activations(n["idx"])
+        logger.info("Neighbor %d (cos=%s) -> %d examples:\n%s",
+                    n["idx"], n.get("cos"), len(exs),
+                    "\n".join(f"  [{i}] {_preview(e)}" for i, e in enumerate(exs)))
+        D.extend((n["idx"], e) for e in exs)
+    random.Random(42).shuffle(D)
+    subpools = [D[i * N_SHOWN:(i + 1) * N_SHOWN] for i in range(K_ITER)]
+
+    client = _LoggingOpenRouter(SCORER_MODEL, api_key=OPENROUTER_API_KEY, temperature=0)
+    TP = TN = POS = NEG = 0
+    bal_log: list[float | None] = []
+    for i, sub in enumerate(subpools):
+        items = ([(e, True, "P") for e in P]
+                 + [(e, False, f"N{nidx}") for nidx, e in sub])
+        random.Random(42 + i).shuffle(items)
+        logger.info("=== iter %d ===", i)
+        calls = [items[:N_SHOWN], items[N_SHOWN:]]
+        preds = [await _classify_batch(client, description, c) for c in calls]
+        if any(all(p is None for p in ps) for ps in preds):
+            logger.warning("[iter %d] dropped (parse failure)", i)
+            bal_log.append(None)
+            continue
+        tp_i = tn_i = vpos = vneg = 0
+        for call, ps in zip(calls, preds):
+            for (_, actual, _), pred in zip(call, ps):
+                if pred is None:
+                    continue
+                if actual:
+                    vpos += 1; tp_i += int(pred)
+                else:
+                    vneg += 1; tn_i += int(not pred)
+        TP += tp_i; TN += tn_i; POS += vpos; NEG += vneg
+        bal_i = 0.5 * (tp_i / max(vpos, 1) + tn_i / max(vneg, 1))
+        bal_log.append(bal_i)
+        logger.info("[iter %d] tp=%d/%d tn=%d/%d bal=%.3f",
+                    i, tp_i, vpos, tn_i, vneg, bal_i)
+
+    if POS < 25 or NEG < 25:
+        raise HTTPException(500, f"too few parseable selections (POS={POS} NEG={NEG})")
+    bal = 0.5 * (TP / POS + TN / NEG)
+    score = max(0.0, 2 * bal - 1)
+    logger.info("Result fid=%d TP=%d/%d TN=%d/%d bal=%.3f score=%.3f bal_per_iter=%s",
+                fid, TP, POS, TN, NEG, bal, score,
+                [None if b is None else round(b, 3) for b in bal_log])
+    return {"score": score, "scorer_model_id": SCORER_MODEL}
 
 
 @app.get("/play")

@@ -62,17 +62,23 @@ FastAPI. Holds `DATABASE_URL`, `JWT_SECRET`, `OPENROUTER_API_KEY` and `NEURONPED
 **Request**: `{ feature_id, description }` (`description`: 1–1000 chars)
 **Response**: `{ submission_id, score, is_new_best }` (`score` ∈ [0, 1])
 
-**Scoring procedure** — delphi's `DetectionScorer` (== eleuther_recall):
+**Scoring procedure** — detection-style classification over `K=5` iterations:
 
 1. **Build evidence set** from `np-l20-res-16k/features/{feature_id}.json.gz`:
-   - `test`: first `N_TEST=20` examples of the top bucket (`binContains == -1`) — these *do* activate the feature.
-   - `not_active`: top-bucket examples of the feature's `neighbors[].idx` (highest cosine first, skipping self), pooled until `≥ 3·N_DISTRACTORS`, shuffled with `Random(42)`, truncated to `N_DISTRACTORS=20` — these are hard negatives that look semantically nearby but should *not* match the label.
-2. **Tokenize** each example's `tokens` with `unsloth/gemma-2-2b` (cached, loaded once) into a `delphi.latents` `ActivatingExample` / `NonActivatingExample`.
-3. **Score** with `DetectionScorer(client=OpenRouter("anthropic/claude-sonnet-4.5"), n_examples_shown=5)`: the LLM is shown groups of 5 examples + the user's `description` and must mark which ones activate.
-4. **Reduce** to informedness `max(0, 2·bal − 1)` where `bal = 0.5·(TP/POS + TN/NEG)` over all parseable responses; this is `score ∈ [0, 1]` (random guessing → 0, perfect → 1).
-5. **Persist** one row in `submissions` (`user_id`, `feature_id`, `label=description`, `score`, `scorer_model_id='anthropic/claude-sonnet-4.5'`, `created_at=now()`). `is_new_best = score > max(prior score for this feature_id)` (true if no prior real submission).
+   - `P` (positives): `top_activations(feature_id)` — the `TOP_K=5` deduped top-bucket examples (the same 5 that hydrate `/play`). Fixed across all iterations.
+   - For the 5 neighbors of `feature_id` with highest `cos` (skipping self / out-of-range), take `top_activations(neighbor_id)` → 5 deduped distractors each → distractor pool `D` of 25.
+   - Shuffle `D` with `Random(42)` and split into 5 disjoint contiguous subpools `D_1..D_5` of size 5.
+2. **Run `K=5` iterations**. For each `i ∈ 1..5`:
+   - `pool_i ← shuffle(P ∪ D_i, seed=42+i)` → 10 mixed-class examples.
+   - Two LLM calls of 5 examples each: `call_A_i = pool_i[:5]`, `call_B_i = pool_i[5:]`. Each call uses the delphi detection prompt (system + 3 few-shots + user batch) via `OpenRouter("anthropic/claude-haiku-4.5", temperature=0)` and must return a Python list of 5 binary predictions.
+   - Aggregate the 10 predictions of iteration `i` into `(tp_i, tn_i)` with `pos_i = neg_i = 5`.
+3. **Reduce (pool-then-clip)** over all 50 predictions:
+   `TP = Σ tp_i`, `TN = Σ tn_i`, `POS = NEG = 25`,
+   `bal = 0.5·(TP/POS + TN/NEG)`, `score = max(0, 2·bal − 1) ∈ [0, 1]`.
+   Per-iteration `bal_i` is logged for variance diagnostics but does not enter the final score.
+4. **Persist** one row in `submissions` (`user_id`, `feature_id`, `label=description`, `score`, `scorer_model_id='anthropic/claude-haiku-4.5'`, `created_at=now()`). `is_new_best = score > max(prior score for this feature_id)`, computed over **all** prior rows (seeds + real). A real submission must clear the seed floor (`score > 0.5`) to be flagged as a new best on a feature that has no prior real submission.
 
-Hard timeout 60 s on the scorer call → 504. Scorer returning zero parseable selections → 500.
+Hard timeout 60 s on the full scoring run (all 10 calls) → 504. Any iteration where either call returns zero parseable selections is dropped from the pool; if fewer than 25 positive or 25 negative predictions remain, → 500.
 
 ---
 
