@@ -8,6 +8,8 @@ python-dotenv
 numpy
 umap-learn
 huggingface_hub
+nltk
+sentence-transformers
 
 torch
 transformers
